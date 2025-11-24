@@ -26,6 +26,13 @@ Simple, fast, and dependency-free.
 - Works on macOS, Linux, WSL
 
 ------------------------------------------------------------
+🗂 HOW CREATE A NEW CUSTOMER
+------------------------------------------------------------
+```sh
+ssh-keygen -t ed25519 -C "geovane.clientx@example.com" -f ~/.ssh/clientX/id_ed25519
+```
+
+------------------------------------------------------------
 🗂 FOLDER STRUCTURE
 ------------------------------------------------------------
 Place the script and keys like this inside ~/.ssh:
