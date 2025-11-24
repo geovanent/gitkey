@@ -1,4 +1,4 @@
-# 🛡️ SSH Multi-Profile Manager
+# 🛡️ SSH and GIT Multi-Profile Manager
 Easily switch between multiple SSH identities and Git profiles  
 Perfect for consultants, freelancers, and developers with multiple clients.
 
