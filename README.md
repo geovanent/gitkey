@@ -37,6 +37,7 @@ ssh-keygen -t ed25519 -C "geovane.clientx@example.com" -f ~/.ssh/clientX/id_ed25
 ------------------------------------------------------------
 Place the script and keys like this inside ~/.ssh:
 
+```sh
 ~/.ssh/
     switch_profile.py
     active_profile.lock
@@ -54,6 +55,7 @@ Place the script and keys like this inside ~/.ssh:
     clientX/
         id_ed25519
         id_ed25519.pub
+```
 
 ------------------------------------------------------------
 📥 INSTALLATION
