@@ -62,30 +62,41 @@ Place the script and keys like this inside ~/.ssh:
 ------------------------------------------------------------
 Clone the project:
 
+```sh
 git clone https://github.com/<your-name>/ssh-multi-profile-manager.git
 cd ssh-multi-profile-manager
+```
 
 Make executable:
 
+```sh
 chmod +x switch_profile.py
+```
 
 Move script into ~/.ssh:
 
+```sh
 mv switch_profile.py ~/.ssh/
+```
 
 (Optional) Create a global command:
 
+```sh
 sudo ln -s ~/.ssh/switch_profile.py /usr/local/bin/sshprofile
+```
 
 Now you can run:
 
+```sh
 sshprofile -p personal
+```
 
 ------------------------------------------------------------
 ⚙ CONFIGURATION
 ------------------------------------------------------------
 Profiles are defined inside the script:
 
+```sh
 PROFILES = {
     "personal": {
         "folder": "personal",
@@ -98,6 +109,7 @@ PROFILES = {
         "git_email": "dev@clientA.com"
     }
 }
+```
 
 Fields:
 - folder: Subfolder inside ~/.ssh where keys are stored
