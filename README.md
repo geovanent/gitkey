@@ -120,34 +120,45 @@ Fields:
 ➕ ADDING A NEW CLIENT
 ------------------------------------------------------------
 1. Create a folder:
+   ```sh
     mkdir ~/.ssh/clientX
+   ```
 
-2. Add your SSH key pair inside:
+3. Add your SSH key pair inside:
+    ```sh
     ~/.ssh/clientX/id_ed25519
     ~/.ssh/clientX/id_ed25519.pub
+    ```
 
-3. Add profile entry to the script:
-
+5. Add profile entry to the script:
+```sh
 "clientX": {
     "folder": "clientX",
     "git_name": "Your Name (Client X)",
     "git_email": "you@clientx.com"
 }
+```
 
 ------------------------------------------------------------
 🖥 USAGE
 ------------------------------------------------------------
 Switch to a specific profile:
+```sh
     python ~/.ssh/switch_profile.py -p toro
+```
 
 Auto-rotate between profiles:
+```sh
     python ~/.ssh/switch_profile.py
+```
 
 Rotation order is alphabetical:
     personal -> santander -> toro -> clientX -> personal -> ...
 
 Switch SSH key only (skip Git identity):
+```sh
     python ~/.ssh/switch_profile.py -p santander --no-git
+```
 
 ------------------------------------------------------------
 🔒 SECURITY
