@@ -80,9 +80,9 @@ After cloning the repository into `~/.ssh/`, your structure should look like thi
 1. **Clone the repository into `~/.ssh/`:**
    ```sh
    cd ~/.ssh
-   git clone https://github.com/<your-name>/ssh-multi-profile-manager.git
+   git clone git@github.com:geovanent/switch_profile_git.git
    # Or if you prefer a different name:
-   git clone https://github.com/<your-name>/ssh-multi-profile-manager.git switch_profile_git
+   git clone git@github.com:geovanent/switch_profile_git.git switch_profile_git
    ```
 
 2. **Make the wrapper script executable:**
@@ -137,7 +137,7 @@ If you prefer to install manually without the wrapper:
 1. **Clone or download the repository:**
    ```sh
    cd ~/.ssh
-   git clone https://github.com/<your-name>/ssh-multi-profile-manager.git
+   git clone git@github.com:geovanent/switch_profile_git.git
    ```
 
 2. **Make the Python script executable:**
