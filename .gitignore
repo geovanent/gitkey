@@ -1,0 +1,23 @@
+# Ignore real settings file (contains sensitive client data)
+settings.py
+
+# Ignore lock file (local state)
+active_profile.lock
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments (if any)
+venv/
+env/
+ENV/

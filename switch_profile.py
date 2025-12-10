@@ -14,7 +14,7 @@ Ideal for consultants working with many clients/projects.
 ----------------------------------------------
 
 ~/.ssh/
-    change_keys.py
+    switch_profile.py
     active_profile.lock
     allowed_signers          <-- auto-generated file for SSH commit signing verification
     id_ed25519               <-- active SSH key (overwritten by the script)
@@ -44,7 +44,7 @@ Ideal for consultants working with many clients/projects.
     ~/.ssh/clientX/id_ed25519
     ~/.ssh/clientX/id_ed25519.pub
 
-3) Add the profile to the PROFILES dictionary in this script:
+3) Add the profile to the PROFILES dictionary in settings.py:
 
     "clientX": {
         "folder": "clientX",
@@ -53,24 +53,30 @@ Ideal for consultants working with many clients/projects.
         "sign_commits": False  # Optional: set to True to enable SSH commit signing
     }
 
+   Note: If settings.py doesn't exist, copy settings-example.py to settings.py first.
+   
+   You can configure GIT_GLOBAL_SCOPE at the top of settings.py:
+   - True: Sets Git config globally (affects all repos) - default behavior
+   - False: Sets Git config only for the current repository (must be inside a Git repo)
+
 ----------------------------------------------
  📌 HOW TO USE
 ----------------------------------------------
 
 🔹 Interactive mode (asks which client to use):
-    python change_keys.py
+    python switch_profile.py
 
 🔹 Activate a specific profile by name:
-    python change_keys.py -p santander
-    python change_keys.py -p personal
-    python change_keys.py -p toro
+    python switch_profile.py -p santander
+    python switch_profile.py -p personal
+    python switch_profile.py -p toro
 
 🔹 Rotate automatically between profiles (alphabetical):
-    python change_keys.py -p auto
+    python switch_profile.py -p auto
 
 🔹 Switch only SSH key (skip Git identity):
-    python change_keys.py --no-git
-    python change_keys.py -p santander --no-git
+    python switch_profile.py --no-git
+    python switch_profile.py -p santander --no-git
 
 ----------------------------------------------
  📌 ABOUT THE LOCK FILE
@@ -94,33 +100,20 @@ PATH_SSH = os.path.dirname(__file__)   # typically ~/.ssh
 LOCK_FILENAME = os.path.join(PATH_SSH, "active_profile.lock")
 ALLOWED_SIGNERS_FILE = os.path.join(PATH_SSH, "allowed_signers")
 KEY_NAME = "id_ed25519"
+SETTINGS_FILE = os.path.join(PATH_SSH, "settings.py")
 
-
-# 🔧 Configure your profiles here
-PROFILES = {
-    "personal": {
-        "folder": "pessoal",
-        "git_name": "Geovane C.",
-        "git_email": "geovanent@gmail.com",
-    },
-    "Customer1": {
-        "folder": "customer1",
-        "git_name": "Geovane C.",
-        "git_email": "customer1@example.com",
-        "sign_commits": True,  # Enable SSH commit signing
-    },
-    "Customer2": {
-        "folder": "customer2",
-        "git_name": "Geovane C.",
-        "git_email": "customer2@example.com",
-    },
-    # Add new clients here, e.g.:
-    # "clientX": {
-    #     "folder": "clientX",
-    #     "git_name": "Geovane (Client X)",
-    #     "git_email": "your.email@clientx.com",
-    # },
-}
+# Import PROFILES and GIT_GLOBAL_SCOPE from settings.py
+try:
+    from settings import PROFILES, GIT_GLOBAL_SCOPE
+except ImportError:
+    example_file = os.path.join(PATH_SSH, "settings-example.py")
+    sys.exit(
+        f"\nERROR: settings.py not found.\n"
+        f"Please copy {example_file} to {SETTINGS_FILE} and configure your settings.\n"
+        f"Example: cp {example_file} {SETTINGS_FILE}\n"
+    )
+except Exception as e:
+    sys.exit(f"\nERROR: Failed to load settings.py: {e}\n")
 
 
 def read_lock():
@@ -319,23 +312,115 @@ def update_allowed_signers(profile_name: str):
         return False
 
 
+def is_git_repo() -> bool:
+    """Check if current directory is a Git repository."""
+    result = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def git_config_set(scope: str, key: str, value: str) -> tuple[bool, str]:
+    """Set a Git config value with the specified scope (global or local)."""
+    if scope == "local" and not is_git_repo():
+        return False, "Not in a Git repository"
+    
+    scope_flag = "--global" if scope == "global" else "--local"
+    result = subprocess.run(
+        ["git", "config", scope_flag, key, value],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return True, ""
+    return False, result.stderr.decode().strip()
+
+
+def git_config_get(scope: str, key: str) -> str:
+    """Get a Git config value with the specified scope (global or local)."""
+    if scope == "local" and not is_git_repo():
+        return ""
+    
+    scope_flag = "--global" if scope == "global" else "--local"
+    result = subprocess.run(
+        ["git", "config", scope_flag, key],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip()
+
+
+def git_config_unset(scope: str, key: str) -> bool:
+    """Unset a Git config value with the specified scope (global or local)."""
+    if scope == "local" and not is_git_repo():
+        return False
+    
+    scope_flag = "--global" if scope == "global" else "--local"
+    result = subprocess.run(
+        ["git", "config", scope_flag, "--unset", key],
+        check=False,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
 def configure_git(profile_name: str):
-    """Configure Git identity (user.name & user.email) locally and commit signing globally."""
+    """Configure Git identity (user.name & user.email) and commit signing with configurable scope."""
     profile = PROFILES.get(profile_name, {})
     git_name = profile.get("git_name")
     git_email = profile.get("git_email")
     sign_commits = profile.get("sign_commits", False)
+    
+    # Convert GIT_GLOBAL_SCOPE boolean to scope string
+    git_scope = "global" if GIT_GLOBAL_SCOPE else "local"
 
     if not git_name and not git_email and not sign_commits:
         return
 
-    # Configure commit signing globally (doesn't require being in a Git repo)
+    scope_label = "globally" if git_scope == "global" else "locally (current repo)"
+
+    # Configure user.name and user.email
+    if git_name or git_email:
+        # Show current configuration before updating
+        current_name = git_config_get(git_scope, "user.name")
+        current_email = git_config_get(git_scope, "user.email")
+        
+        if current_name or current_email:
+            print(f"   Current {git_scope} Git config: {current_name or '(not set)'} <{current_email or '(not set)'}>")
+
+        # Configure user.name
+        if git_name:
+            success, error = git_config_set(git_scope, "user.name", git_name)
+            if success:
+                print(f"   ✓ Git user.name set {scope_label} to: {git_name}")
+            else:
+                if git_scope == "local" and "Not in a Git repository" in error:
+                    print(f"   ⚠️  Cannot set Git user.name locally: {error}")
+                else:
+                    print(f"   ⚠️  Failed to set Git user.name: {error}")
+        
+        # Configure user.email
+        if git_email:
+            success, error = git_config_set(git_scope, "user.email", git_email)
+            if success:
+                print(f"   ✓ Git user.email set {scope_label} to: {git_email}")
+            else:
+                if git_scope == "local" and "Not in a Git repository" in error:
+                    print(f"   ⚠️  Cannot set Git user.email locally: {error}")
+                else:
+                    print(f"   ⚠️  Failed to set Git user.email: {error}")
+
+    # Configure commit signing
+    # Note: allowedSignersFile is always set globally as it's a system-wide setting
     if sign_commits:
         pub_key_path = os.path.join(PATH_SSH, KEY_NAME + ".pub")
         if os.path.exists(pub_key_path):
-            # Update allowed_signers file
+            # Update allowed_signers file (always global)
             if update_allowed_signers(profile_name):
-                # Configure Git to use the allowed_signers file
+                # Configure Git to use the allowed_signers file (always global)
                 subprocess.run(
                     [
                         "git",
@@ -347,108 +432,27 @@ def configure_git(profile_name: str):
                     check=False,
                 )
 
-            subprocess.run(
-                ["git", "config", "--global", "commit.gpgsign", "true"], check=False
-            )
-            subprocess.run(
-                ["git", "config", "--global", "tag.gpgsign", "true"], check=False
-            )
-            subprocess.run(
-                ["git", "config", "--global", "gpg.format", "ssh"], check=False
-            )
-            subprocess.run(
-                ["git", "config", "--global", "user.signingkey", pub_key_path],
-                check=False,
-            )
-            print(f"🔐 Commit signing enabled globally (SSH) for profile: {profile_name}")
+            # Set commit signing config with the specified scope
+            git_config_set(git_scope, "commit.gpgsign", "true")
+            git_config_set(git_scope, "tag.gpgsign", "true")
+            git_config_set(git_scope, "gpg.format", "ssh")
+            git_config_set(git_scope, "user.signingkey", pub_key_path)
+            print(f"🔐 Commit signing enabled {scope_label} (SSH) for profile: {profile_name}")
         else:
             print(
                 f"⚠️  WARNING: SSH public key not found at {pub_key_path}. "
                 "Commit signing not configured."
             )
     else:
-        # Disable commit signing globally for profiles that don't require it
-        subprocess.run(
-            ["git", "config", "--global", "--unset", "commit.gpgsign"],
-            check=False,
-            stderr=subprocess.DEVNULL,
-        )
-        subprocess.run(
-            ["git", "config", "--global", "--unset", "tag.gpgsign"],
-            check=False,
-            stderr=subprocess.DEVNULL,
-        )
-        subprocess.run(
-            ["git", "config", "--global", "--unset", "gpg.format"],
-            check=False,
-            stderr=subprocess.DEVNULL,
-        )
-        subprocess.run(
-            ["git", "config", "--global", "--unset", "user.signingkey"],
-            check=False,
-            stderr=subprocess.DEVNULL,
-        )
-        # Note: We keep gpg.ssh.allowedSignersFile configured even when signing is disabled
+        # Disable commit signing for profiles that don't require it
+        git_config_unset(git_scope, "commit.gpgsign")
+        git_config_unset(git_scope, "tag.gpgsign")
+        git_config_unset(git_scope, "gpg.format")
+        git_config_unset(git_scope, "user.signingkey")
+        # Note: We keep gpg.ssh.allowedSignersFile configured globally even when signing is disabled
         # so it's available for verification of existing signed commits
 
-    # Configure user.name and user.email locally (requires being in a Git repo)
-    if git_name or git_email:
-        try:
-            subprocess.run(
-                ["git", "rev-parse", "--is-inside-work-tree"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=True,
-            )
-        except subprocess.CalledProcessError:
-            print("ℹ️  Not inside a Git repository. Skipping local Git identity update.")
-            print(
-                f"   To configure this repository, run the script from inside the repo:\n"
-                f"   cd /path/to/repo && python {os.path.join(PATH_SSH, 'change_keys.py')} -p {profile_name}"
-            )
-            return
-
-        # Show current configuration before updating
-        current_name = subprocess.run(
-            ["git", "config", "user.name"],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout.strip()
-        current_email = subprocess.run(
-            ["git", "config", "user.email"],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout.strip()
-        
-        if current_name or current_email:
-            print(f"   Current Git config: {current_name or '(not set)'} <{current_email or '(not set)'}>")
-
-        # Configure user.name and user.email locally (without --global flag)
-        if git_name:
-            result = subprocess.run(
-                ["git", "config", "user.name", git_name],
-                check=False,
-                capture_output=True,
-            )
-            if result.returncode == 0:
-                print(f"   ✓ Git user.name set to: {git_name}")
-            else:
-                print(f"   ⚠️  Failed to set Git user.name: {result.stderr.decode().strip()}")
-        
-        if git_email:
-            result = subprocess.run(
-                ["git", "config", "user.email", git_email],
-                check=False,
-                capture_output=True,
-            )
-            if result.returncode == 0:
-                print(f"   ✓ Git user.email set to: {git_email}")
-            else:
-                print(f"   ⚠️  Failed to set Git user.email: {result.stderr.decode().strip()}")
-
-    print(f"🧾 Git identity updated for profile: {profile_name}\n")
+    print(f"🧾 Git identity updated {scope_label} for profile: {profile_name}\n")
 
 
 def main():
