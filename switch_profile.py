@@ -78,6 +78,10 @@ Ideal for consultants working with many clients/projects.
     python switch_profile.py --no-git
     python switch_profile.py -p santander --no-git
 
+🔹 Reset last commit author to match current profile:
+    python switch_profile.py --reset
+    python switch_profile.py --reset -p santander
+
 ----------------------------------------------
  📌 ABOUT THE LOCK FILE
 ----------------------------------------------
@@ -96,17 +100,37 @@ import subprocess
 from shutil import copyfile
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
-PATH_SSH = os.path.dirname(__file__)   # typically ~/.ssh
+# Determine SSH directory: if script is in a subfolder, use parent directory (~/.ssh/)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(SCRIPT_DIR)
+
+# Check if script is in a subfolder (e.g., ~/.ssh/switch_profile_git/)
+# If settings.py exists in script dir but not in parent, we're in a subfolder
+SCRIPT_HAS_SETTINGS = os.path.exists(os.path.join(SCRIPT_DIR, "settings.py")) or os.path.exists(os.path.join(SCRIPT_DIR, "settings-example.py"))
+PARENT_HAS_SETTINGS = os.path.exists(os.path.join(PARENT_DIR, "settings.py")) or os.path.exists(os.path.join(PARENT_DIR, "settings-example.py"))
+
+if SCRIPT_HAS_SETTINGS and not PARENT_HAS_SETTINGS:
+    # Script is in a subfolder, use parent as PATH_SSH (~/.ssh/)
+    PATH_SSH = PARENT_DIR
+    SETTINGS_FILE = os.path.join(SCRIPT_DIR, "settings.py")  # settings.py stays with script
+else:
+    # Script is at root level (~/.ssh/)
+    PATH_SSH = SCRIPT_DIR
+    SETTINGS_FILE = os.path.join(PATH_SSH, "settings.py")
+
 LOCK_FILENAME = os.path.join(PATH_SSH, "active_profile.lock")
 ALLOWED_SIGNERS_FILE = os.path.join(PATH_SSH, "allowed_signers")
 KEY_NAME = "id_ed25519"
-SETTINGS_FILE = os.path.join(PATH_SSH, "settings.py")
 
 # Import PROFILES and GIT_GLOBAL_SCOPE from settings.py
+# Add script directory to path so we can import settings.py
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
 try:
     from settings import PROFILES, GIT_GLOBAL_SCOPE
 except ImportError:
-    example_file = os.path.join(PATH_SSH, "settings-example.py")
+    example_file = os.path.join(SCRIPT_DIR, "settings-example.py")
     sys.exit(
         f"\nERROR: settings.py not found.\n"
         f"Please copy {example_file} to {SETTINGS_FILE} and configure your settings.\n"
@@ -455,6 +479,85 @@ def configure_git(profile_name: str):
     print(f"🧾 Git identity updated {scope_label} for profile: {profile_name}\n")
 
 
+def reset_last_commit(profile_name: str):
+    """Reset the author of the last commit to match the current profile."""
+    if not is_git_repo():
+        sys.exit("\nERROR: Not in a Git repository. Cannot reset last commit.\n")
+    
+    # Check if there are any commits
+    result = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    
+    if result.returncode != 0 or not result.stdout.strip() or result.stdout.strip() == "0":
+        sys.exit("\nERROR: No commits found. Nothing to reset.\n")
+    
+    profile = PROFILES.get(profile_name)
+    if not profile:
+        sys.exit(
+            f"\nERROR: Profile '{profile_name}' not found.\n"
+            f"Available profiles: {', '.join(sorted(PROFILES.keys()))}\n"
+        )
+    
+    git_name = profile.get("git_name")
+    git_email = profile.get("git_email")
+    sign_commits = profile.get("sign_commits", False)
+    
+    if not git_name or not git_email:
+        sys.exit(
+            f"\nERROR: Profile '{profile_name}' does not have git_name and git_email configured.\n"
+        )
+    
+    # Get current commit info
+    result = subprocess.run(
+        ["git", "log", "-1", "--format=%an <%ae>", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    current_author = result.stdout.strip() if result.returncode == 0 else "unknown"
+    
+    print(f"\n📝 Resetting last commit author:")
+    print(f"   Current: {current_author}")
+    print(f"   New:     {git_name} <{git_email}>")
+    
+    # Configure Git for signing if needed (before amend, so it re-signs automatically)
+    git_scope = "global" if GIT_GLOBAL_SCOPE else "local"
+    if sign_commits:
+        pub_key_path = os.path.join(PATH_SSH, KEY_NAME + ".pub")
+        if os.path.exists(pub_key_path):
+            update_allowed_signers(profile_name)
+            git_config_set(git_scope, "commit.gpgsign", "true")
+            git_config_set(git_scope, "gpg.format", "ssh")
+            git_config_set(git_scope, "user.signingkey", pub_key_path)
+        else:
+            print(f"   ⚠️  Warning: SSH public key not found. Commit will not be signed.")
+    
+    # Amend the commit with new author (will auto re-sign if commit.gpgsign is true)
+    author_string = f"{git_name} <{git_email}>"
+    result = subprocess.run(
+        ["git", "commit", "--amend", "--author", author_string, "--no-edit"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    
+    if result.returncode != 0:
+        sys.exit(
+            f"\nERROR: Failed to amend commit.\n"
+            f"Error: {result.stderr.strip()}\n"
+        )
+    
+    print(f"   ✓ Commit author updated successfully")
+    if sign_commits:
+        print(f"   ✓ Commit re-signed with SSH key")
+    
+    print()
+
+
 def main():
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument(
@@ -471,7 +574,39 @@ def main():
         action="store_true",
         help="Do not modify Git user.name/user.email.",
     )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Reset the author of the last commit to match the current profile.",
+    )
     args = parser.parse_args()
+    
+    # Handle --reset mode
+    if args.reset:
+        # Determine which profile to use for reset
+        if args.profile:
+            if args.profile not in PROFILES:
+                sys.exit(
+                    f"\nERROR: Profile '{args.profile}' does not exist.\n"
+                    f"Profiles: {', '.join(sorted(PROFILES.keys()))}\n"
+                )
+            profile_name = args.profile
+        else:
+            # Use the active profile from lock file
+            profile_name = read_lock()
+            if not profile_name or profile_name not in PROFILES:
+                sys.exit(
+                    "\nERROR: No active profile found.\n"
+                    "Please specify a profile with -p/--profile or switch to a profile first.\n"
+                )
+            print(f"Using active profile: {profile_name}")
+        
+        # Apply SSH key first (needed for signing)
+        copy_keys(profile_name)
+        
+        # Reset the commit
+        reset_last_commit(profile_name)
+        return
 
     # Decide which profile to use
     if args.profile is None:
