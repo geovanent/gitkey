@@ -14,7 +14,7 @@ Ideal for consultants working with many clients/projects.
 ----------------------------------------------
 
 ~/.ssh/
-    switch_profile.py
+    change_keys.py
     active_profile.lock
     allowed_signers          <-- auto-generated file for SSH commit signing verification
     id_ed25519               <-- active SSH key (overwritten by the script)
@@ -58,19 +58,19 @@ Ideal for consultants working with many clients/projects.
 ----------------------------------------------
 
 🔹 Interactive mode (asks which client to use):
-    python switch_profile.py
+    python change_keys.py
 
 🔹 Activate a specific profile by name:
-    python switch_profile.py -p santander
-    python switch_profile.py -p personal
-    python switch_profile.py -p toro
+    python change_keys.py -p santander
+    python change_keys.py -p personal
+    python change_keys.py -p toro
 
 🔹 Rotate automatically between profiles (alphabetical):
-    python switch_profile.py -p auto
+    python change_keys.py -p auto
 
 🔹 Switch only SSH key (skip Git identity):
-    python switch_profile.py --no-git
-    python switch_profile.py -p santander --no-git
+    python change_keys.py --no-git
+    python change_keys.py -p santander --no-git
 
 ----------------------------------------------
  📌 ABOUT THE LOCK FILE
@@ -404,7 +404,7 @@ def configure_git(profile_name: str):
             print("ℹ️  Not inside a Git repository. Skipping local Git identity update.")
             print(
                 f"   To configure this repository, run the script from inside the repo:\n"
-                f"   cd /path/to/repo && python {os.path.join(PATH_SSH, 'change-keys.py')} -p {profile_name}"
+                f"   cd /path/to/repo && python {os.path.join(PATH_SSH, 'change_keys.py')} -p {profile_name}"
             )
             return
 

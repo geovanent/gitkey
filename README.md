@@ -38,15 +38,23 @@ ssh-keygen -t ed25519 -C "geovane.clientx@example.com" -f ~/.ssh/clientX/id_ed25
 ------------------------------------------------------------
 🗂 FOLDER STRUCTURE
 ------------------------------------------------------------
-Place the script and keys like this inside ~/.ssh:
+After cloning the repository into `~/.ssh/`, your structure should look like this:
 
 ```sh
 ~/.ssh/
-    switch_profile.py
+    # Repository files
+    ssh-multi-profile-manager/    # or your chosen folder name
+        switch_profile.py
+        change_keys               # CLI wrapper script (executable)
+        README.md
+    
+    # Auto-generated files (created by the script)
     active_profile.lock
-    allowed_signers          # Auto-generated file for SSH commit signing
-    id_ed25519               # Active SSH key (overwritten by script)
+    allowed_signers                # Auto-generated file for SSH commit signing
+    id_ed25519                    # Active SSH key (overwritten by script)
     id_ed25519.pub
+    
+    # Profile folders (one per client/profile)
     personal/
         id_ed25519
         id_ed25519.pub
@@ -61,39 +69,91 @@ Place the script and keys like this inside ~/.ssh:
         id_ed25519.pub
 ```
 
+**Note:** The script automatically creates `active_profile.lock` and `allowed_signers` in `~/.ssh/` when first run. Profile folders should be created manually as needed.
+
 ------------------------------------------------------------
 📥 INSTALLATION
 ------------------------------------------------------------
-Clone the project:
+
+### Quick Install (Recommended)
+
+1. **Clone the repository into `~/.ssh/`:**
+   ```sh
+   cd ~/.ssh
+   git clone https://github.com/<your-name>/ssh-multi-profile-manager.git
+   # Or if you prefer a different name:
+   git clone https://github.com/<your-name>/ssh-multi-profile-manager.git switch_profile_git
+   ```
+
+2. **Make the wrapper script executable:**
+   ```sh
+   chmod +x ~/.ssh/ssh-multi-profile-manager/change_keys
+   # Or if you used a different folder name:
+   chmod +x ~/.ssh/switch_profile_git/change_keys
+   ```
+
+3. **Create a symlink to make it globally accessible:**
+
+   **Option A: Using /usr/local/bin (macOS/Linux - requires sudo):**
+   ```sh
+   sudo ln -s ~/.ssh/ssh-multi-profile-manager/change_keys /usr/local/bin/change_keys
+   ```
+
+   **Option B: Using ~/.local/bin (Linux - no sudo needed):**
+   ```sh
+   mkdir -p ~/.local/bin
+   ln -s ~/.ssh/ssh-multi-profile-manager/change_keys ~/.local/bin/change_keys
+   # Add to PATH if not already there (add to ~/.bashrc or ~/.zshrc):
+   export PATH="$HOME/.local/bin:$PATH"
+   ```
+
+   **Option C: Add to PATH directly (macOS/Linux):**
+   Add this line to your `~/.zshrc` (macOS) or `~/.bashrc`/`~/.zshrc` (Linux):
+   ```sh
+   export PATH="$HOME/.ssh/ssh-multi-profile-manager:$PATH"
+   ```
+   Then reload your shell:
+   ```sh
+   source ~/.zshrc  # or source ~/.bashrc
+   ```
+
+4. **Verify installation:**
+   ```sh
+   change_keys --help
+   ```
+
+Now you can use `change_keys` from anywhere:
 
 ```sh
-git clone https://github.com/<your-name>/ssh-multi-profile-manager.git
-cd ssh-multi-profile-manager
+change_keys -p personal
+change_keys -p auto
+change_keys --no-git
 ```
 
-Make executable:
+### Manual Install (Alternative)
 
-```sh
-chmod +x switch_profile.py
-```
+If you prefer to install manually without the wrapper:
 
-Move script into ~/.ssh:
+1. **Clone or download the repository:**
+   ```sh
+   cd ~/.ssh
+   git clone https://github.com/<your-name>/ssh-multi-profile-manager.git
+   ```
 
-```sh
-mv switch_profile.py ~/.ssh/
-```
+2. **Make the Python script executable:**
+   ```sh
+   chmod +x ~/.ssh/ssh-multi-profile-manager/change_keys.py
+   ```
 
-(Optional) Create a global command:
+3. **Create an alias (add to `~/.zshrc` or `~/.bashrc`):**
+   ```sh
+   alias change_keys='python3 ~/.ssh/ssh-multi-profile-manager/switch_profile.py'
+   ```
 
-```sh
-sudo ln -s ~/.ssh/switch_profile.py /usr/local/bin/sshprofile
-```
-
-Now you can run:
-
-```sh
-sshprofile -p personal
-```
+4. **Reload your shell:**
+   ```sh
+   source ~/.zshrc  # or source ~/.bashrc
+   ```
 
 ------------------------------------------------------------
 ⚙ CONFIGURATION
@@ -172,22 +232,41 @@ PROFILES = {
 ------------------------------------------------------------
 🖥 USAGE
 ------------------------------------------------------------
-Switch to a specific profile:
+
+After installation, use the `change_keys` command from anywhere:
+
+**Switch to a specific profile:**
 ```sh
-    python ~/.ssh/switch_profile.py -p toro
+change_keys -p toro
+change_keys -p personal
+change_keys -p clientX
 ```
 
-Auto-rotate between profiles:
+**Interactive mode (shows menu to choose):**
 ```sh
-    python ~/.ssh/switch_profile.py
+change_keys
 ```
 
+**Auto-rotate between profiles (alphabetical order):**
+```sh
+change_keys -p auto
+```
 Rotation order is alphabetical:
     personal -> santander -> toro -> clientX -> personal -> ...
 
-Switch SSH key only (skip Git identity):
+**Switch SSH key only (skip Git identity):**
 ```sh
-    python ~/.ssh/switch_profile.py -p santander --no-git
+change_keys -p santander --no-git
+```
+
+**Show help:**
+```sh
+change_keys --help
+```
+
+**Note:** If you didn't install the wrapper script, you can still use:
+```sh
+python3 ~/.ssh/ssh-multi-profile-manager/switch_profile.py -p personal
 ```
 
 ------------------------------------------------------------
@@ -228,7 +307,7 @@ The script supports SSH commit signing (requires Git 2.34+).
    - This creates both `id_ed25519` (private) and `id_ed25519.pub` (public)
 
 3. **Add the profile to the script:**
-   Edit `switch_profile.py` and add:
+   Edit `change_keys.py` and add:
    ```python
    "clientX": {
        "folder": "clientX",
@@ -240,7 +319,7 @@ The script supports SSH commit signing (requires Git 2.34+).
 
 4. **Switch to the profile:**
    ```sh
-   python ~/.ssh/switch_profile.py -p clientX
+   change_keys -p clientX
    ```
    The script will automatically:
    - Copy the SSH keys to `~/.ssh/id_ed25519` and `~/.ssh/id_ed25519.pub`
@@ -345,6 +424,50 @@ git log --show-signature
   ```sh
   git commit --no-gpg-sign -m "Unsigned commit"
   ```
+
+------------------------------------------------------------
+🔧 TROUBLESHOOTING - CLI Wrapper
+------------------------------------------------------------
+
+**Command `change_keys` not found:**
+- Verify the symlink was created correctly:
+  ```sh
+  ls -la /usr/local/bin/change_keys  # Option A
+  ls -la ~/.local/bin/change_keys     # Option B
+  ```
+- Check if the directory is in your PATH:
+  ```sh
+  echo $PATH | grep -E "(/usr/local/bin|~/.local/bin)"
+  ```
+- For Option C (direct PATH), verify your shell config file was reloaded:
+  ```sh
+  source ~/.zshrc  # or source ~/.bashrc
+  ```
+
+**Script not found error:**
+- The wrapper looks for `switch_profile.py` in these locations:
+  - `~/.ssh/switch_profile.py`
+  - `~/.ssh/ssh-multi-profile-manager/switch_profile.py`
+  - `~/.ssh/switch_profile_git/switch_profile.py`
+  - `~/.ssh/ssh-profile-manager/switch_profile.py`
+- If your repository is in a different location, either:
+  - Move it to one of the locations above, or
+  - Create a symlink: `ln -s /path/to/repo/switch_profile.py ~/.ssh/switch_profile.py`
+
+**Permission denied:**
+- Make sure the wrapper script is executable:
+  ```sh
+  chmod +x ~/.ssh/ssh-multi-profile-manager/change_keys
+  ```
+
+**Python not found:**
+- Ensure Python 3 is installed:
+  ```sh
+  python3 --version
+  ```
+- Install if needed:
+  - macOS: `brew install python3`
+  - Linux: `sudo apt install python3` (Debian/Ubuntu) or `sudo yum install python3` (RHEL/CentOS)
 
 ------------------------------------------------------------
 🔒 SECURITY

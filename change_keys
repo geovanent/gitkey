@@ -1,0 +1,65 @@
+#!/bin/bash
+#
+# SSH Profile Manager - CLI Wrapper
+# This script provides a global CLI command to switch SSH profiles
+#
+
+# Find the switch_profile.py script
+# Try common locations where the repository might be cloned
+POSSIBLE_PATHS=(
+    "$HOME/.ssh/switch_profile.py"
+    "$HOME/.ssh/ssh-multi-profile-manager/switch_profile.py"
+    "$HOME/.ssh/switch_profile_git/switch_profile.py"
+    "$HOME/.ssh/ssh-profile-manager/switch_profile.py"
+)
+
+SCRIPT_PATH=""
+
+# Try to find the script in common locations
+for path in "${POSSIBLE_PATHS[@]}"; do
+    if [ -f "$path" ]; then
+        SCRIPT_PATH="$path"
+        break
+    fi
+done
+
+# If not found, check if we're being run from within the repository
+if [ -z "$SCRIPT_PATH" ]; then
+    # Get the directory where this wrapper script is located
+    WRAPPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ -f "$WRAPPER_DIR/switch_profile.py" ]; then
+        SCRIPT_PATH="$WRAPPER_DIR/switch_profile.py"
+    fi
+fi
+
+# Check if script exists
+if [ -z "$SCRIPT_PATH" ] || [ ! -f "$SCRIPT_PATH" ]; then
+    echo "❌ Error: switch_profile.py not found" >&2
+    echo "" >&2
+    echo "Searched in:" >&2
+    for path in "${POSSIBLE_PATHS[@]}"; do
+        echo "  - $path" >&2
+    done
+    echo "" >&2
+    echo "Please ensure you have:" >&2
+    echo "  1. Cloned the repository into ~/.ssh/" >&2
+    echo "  2. Or copied switch_profile.py to one of the locations above" >&2
+    exit 1
+fi
+
+# Check if Python is available
+if ! command -v python3 &> /dev/null && ! command -v python &> /dev/null; then
+    echo "❌ Error: Python is not installed or not in PATH" >&2
+    exit 1
+fi
+
+# Use python3 if available, otherwise fall back to python
+if command -v python3 &> /dev/null; then
+    PYTHON_CMD="python3"
+else
+    PYTHON_CMD="python"
+fi
+
+# Execute the Python script with all passed arguments
+exec "$PYTHON_CMD" "$SCRIPT_PATH" "$@"
+
