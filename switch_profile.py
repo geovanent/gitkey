@@ -5,6 +5,7 @@
 
 This script allows switching between multiple SSH profiles,
 each with its own SSH key and Git identity (user.name & user.email).
+It also supports SSH commit signing for profiles that require it.
 
 Ideal for consultants working with many clients/projects.
 
@@ -15,15 +16,16 @@ Ideal for consultants working with many clients/projects.
 ~/.ssh/
     switch_profile.py
     active_profile.lock
+    allowed_signers          <-- auto-generated file for SSH commit signing verification
     id_ed25519               <-- active SSH key (overwritten by the script)
     id_ed25519.pub
     personal/
         id_ed25519
         id_ed25519.pub
-    client1/
+    santander/
         id_ed25519
         id_ed25519.pub
-    client2/
+    toro/
         id_ed25519
         id_ed25519.pub
     clientX/
@@ -47,7 +49,8 @@ Ideal for consultants working with many clients/projects.
     "clientX": {
         "folder": "clientX",
         "git_name": "Your Name (Client X)",
-        "git_email": "your.email@clientx.com"
+        "git_email": "your.email@clientx.com",
+        "sign_commits": False  # Optional: set to True to enable SSH commit signing
     }
 
 ----------------------------------------------
@@ -89,13 +92,14 @@ from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 PATH_SSH = os.path.dirname(__file__)   # typically ~/.ssh
 LOCK_FILENAME = os.path.join(PATH_SSH, "active_profile.lock")
+ALLOWED_SIGNERS_FILE = os.path.join(PATH_SSH, "allowed_signers")
 KEY_NAME = "id_ed25519"
 
 
 # 🔧 Configure your profiles here
 PROFILES = {
     "personal": {
-        "folder": "personal",
+        "folder": "pessoal",
         "git_name": "Geovane C.",
         "git_email": "geovanent@gmail.com",
     },
@@ -103,6 +107,7 @@ PROFILES = {
         "folder": "customer1",
         "git_name": "Geovane C.",
         "git_email": "customer1@example.com",
+        "sign_commits": True,  # Enable SSH commit signing
     },
     "Customer2": {
         "folder": "customer2",
@@ -211,31 +216,237 @@ def copy_keys(profile_name: str):
     print(f"\n✅ Active SSH profile: {profile_name} (folder: {folder})")
 
 
+def update_allowed_signers(profile_name: str):
+    """Update the allowed_signers file with the current profile's SSH key and email."""
+    profile = PROFILES.get(profile_name, {})
+    git_email = profile.get("git_email")
+    pub_key_path = os.path.join(PATH_SSH, KEY_NAME + ".pub")
+
+    if not git_email or not os.path.exists(pub_key_path):
+        return False
+
+    # Check if file exists and has wrong ownership/permissions
+    if os.path.exists(ALLOWED_SIGNERS_FILE):
+        try:
+            stat_info = os.stat(ALLOWED_SIGNERS_FILE)
+            current_uid = os.getuid()
+            if stat_info.st_uid != current_uid:
+                print(
+                    f"⚠️  WARNING: allowed_signers file is owned by another user (UID: {stat_info.st_uid}).\n"
+                    f"   Please run: sudo chown $USER {ALLOWED_SIGNERS_FILE}\n"
+                    f"   Then run this script again."
+                )
+                return False
+        except OSError:
+            pass
+
+    try:
+        # Read the public key
+        with open(pub_key_path, "r") as f:
+            pub_key_content = f.read().strip()
+
+        # Parse the key (format: "ssh-ed25519 AAAA... comment" or "ssh-ed25519 AAAA...")
+        parts = pub_key_content.split()
+        if len(parts) < 2:
+            print(f"⚠️  WARNING: Invalid SSH public key format in {pub_key_path}")
+            return False
+
+        key_type = parts[0]  # e.g., "ssh-ed25519"
+        key_data = parts[1]  # The actual key data
+
+        # Write to allowed_signers file
+        # Format: email key-type key-data [comment]
+        signer_line = f"{git_email} {key_type} {key_data}\n"
+
+        # Read existing content to avoid duplicates
+        existing_lines = []
+        if os.path.exists(ALLOWED_SIGNERS_FILE):
+            # Ensure file has correct permissions before reading
+            try:
+                os.chmod(ALLOWED_SIGNERS_FILE, 0o644)
+            except (PermissionError, OSError):
+                pass  # Try anyway, might work
+            
+            try:
+                with open(ALLOWED_SIGNERS_FILE, "r") as f:
+                    existing_lines = f.readlines()
+            except PermissionError:
+                # If still can't read, try to fix permissions with chmod command
+                subprocess.run(
+                    ["chmod", "644", ALLOWED_SIGNERS_FILE],
+                    check=False,
+                    stderr=subprocess.DEVNULL,
+                )
+                # Try reading again
+                try:
+                    with open(ALLOWED_SIGNERS_FILE, "r") as f:
+                        existing_lines = f.readlines()
+                except Exception as e:
+                    print(f"⚠️  WARNING: Could not read existing allowed_signers file: {e}")
+                    existing_lines = []
+
+        # Remove any existing line for this email
+        existing_lines = [
+            line for line in existing_lines if not line.startswith(f"{git_email} ")
+        ]
+
+        # Add the new signer line
+        existing_lines.append(signer_line)
+
+        # Write back to file
+        with open(ALLOWED_SIGNERS_FILE, "w") as f:
+            f.writelines(existing_lines)
+
+        # Set proper permissions (readable and writable by owner, readable by group/others)
+        # Git needs to read this file, so 0o644 is appropriate
+        try:
+            os.chmod(ALLOWED_SIGNERS_FILE, 0o644)
+        except (PermissionError, OSError) as e:
+            print(f"⚠️  WARNING: Could not set permissions on allowed_signers file: {e}")
+            # Try to fix permissions using chmod command as fallback
+            try:
+                subprocess.run(
+                    ["chmod", "644", ALLOWED_SIGNERS_FILE],
+                    check=False,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
+
+        return True
+    except Exception as e:
+        print(f"⚠️  WARNING: Failed to update allowed_signers file: {e}")
+        return False
+
+
 def configure_git(profile_name: str):
-    """Configure Git identity (user.name & user.email) for the current repository."""
+    """Configure Git identity (user.name & user.email) locally and commit signing globally."""
     profile = PROFILES.get(profile_name, {})
     git_name = profile.get("git_name")
     git_email = profile.get("git_email")
+    sign_commits = profile.get("sign_commits", False)
 
-    if not git_name and not git_email:
+    if not git_name and not git_email and not sign_commits:
         return
 
-    # Check if inside a Git repo
-    try:
+    # Configure commit signing globally (doesn't require being in a Git repo)
+    if sign_commits:
+        pub_key_path = os.path.join(PATH_SSH, KEY_NAME + ".pub")
+        if os.path.exists(pub_key_path):
+            # Update allowed_signers file
+            if update_allowed_signers(profile_name):
+                # Configure Git to use the allowed_signers file
+                subprocess.run(
+                    [
+                        "git",
+                        "config",
+                        "--global",
+                        "gpg.ssh.allowedSignersFile",
+                        ALLOWED_SIGNERS_FILE,
+                    ],
+                    check=False,
+                )
+
+            subprocess.run(
+                ["git", "config", "--global", "commit.gpgsign", "true"], check=False
+            )
+            subprocess.run(
+                ["git", "config", "--global", "tag.gpgsign", "true"], check=False
+            )
+            subprocess.run(
+                ["git", "config", "--global", "gpg.format", "ssh"], check=False
+            )
+            subprocess.run(
+                ["git", "config", "--global", "user.signingkey", pub_key_path],
+                check=False,
+            )
+            print(f"🔐 Commit signing enabled globally (SSH) for profile: {profile_name}")
+        else:
+            print(
+                f"⚠️  WARNING: SSH public key not found at {pub_key_path}. "
+                "Commit signing not configured."
+            )
+    else:
+        # Disable commit signing globally for profiles that don't require it
         subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            stdout=subprocess.DEVNULL,
+            ["git", "config", "--global", "--unset", "commit.gpgsign"],
+            check=False,
             stderr=subprocess.DEVNULL,
-            check=True,
         )
-    except subprocess.CalledProcessError:
-        print("ℹ️  Not inside a Git repository. Skipping Git identity update.")
-        return
+        subprocess.run(
+            ["git", "config", "--global", "--unset", "tag.gpgsign"],
+            check=False,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "config", "--global", "--unset", "gpg.format"],
+            check=False,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "config", "--global", "--unset", "user.signingkey"],
+            check=False,
+            stderr=subprocess.DEVNULL,
+        )
+        # Note: We keep gpg.ssh.allowedSignersFile configured even when signing is disabled
+        # so it's available for verification of existing signed commits
 
-    if git_name:
-        subprocess.run(["git", "config", "user.name", git_name], check=False)
-    if git_email:
-        subprocess.run(["git", "config", "user.email", git_email], check=False)
+    # Configure user.name and user.email locally (requires being in a Git repo)
+    if git_name or git_email:
+        try:
+            subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
+        except subprocess.CalledProcessError:
+            print("ℹ️  Not inside a Git repository. Skipping local Git identity update.")
+            print(
+                f"   To configure this repository, run the script from inside the repo:\n"
+                f"   cd /path/to/repo && python {os.path.join(PATH_SSH, 'change-keys.py')} -p {profile_name}"
+            )
+            return
+
+        # Show current configuration before updating
+        current_name = subprocess.run(
+            ["git", "config", "user.name"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        current_email = subprocess.run(
+            ["git", "config", "user.email"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        
+        if current_name or current_email:
+            print(f"   Current Git config: {current_name or '(not set)'} <{current_email or '(not set)'}>")
+
+        # Configure user.name and user.email locally (without --global flag)
+        if git_name:
+            result = subprocess.run(
+                ["git", "config", "user.name", git_name],
+                check=False,
+                capture_output=True,
+            )
+            if result.returncode == 0:
+                print(f"   ✓ Git user.name set to: {git_name}")
+            else:
+                print(f"   ⚠️  Failed to set Git user.name: {result.stderr.decode().strip()}")
+        
+        if git_email:
+            result = subprocess.run(
+                ["git", "config", "user.email", git_email],
+                check=False,
+                capture_output=True,
+            )
+            if result.returncode == 0:
+                print(f"   ✓ Git user.email set to: {git_email}")
+            else:
+                print(f"   ⚠️  Failed to set Git user.email: {result.stderr.decode().strip()}")
 
     print(f"🧾 Git identity updated for profile: {profile_name}\n")
 
