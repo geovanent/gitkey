@@ -266,7 +266,7 @@ change_keys --help
 
 **Note:** If you didn't install the wrapper script, you can still use:
 ```sh
-python3 ~/.ssh/ssh-multi-profile-manager/switch_profile.py -p personal
+python3 ~/.ssh/switch_profile_git/switch_profile.py -p personal
 ```
 
 ------------------------------------------------------------
