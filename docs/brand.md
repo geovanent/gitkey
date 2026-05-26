@@ -15,9 +15,18 @@
 
 | File | Use |
 |------|-----|
-| `assets/brand/logo.svg` | Icon, favicon base |
-| `assets/brand/banner.svg` | README header |
+| `assets/brand/logo.svg` / `.png` | Icon |
+| `assets/brand/banner.png` | README header (use PNG on GitHub) |
+| `assets/brand/banner.svg` | Source file — edit and re-export |
 | `assets/demo/demo.gif` | README demo animation |
+
+**Note:** GitHub often fails to render SVG banners. Always use `banner.png` in the README.
+
+Regenerate PNG after editing the SVG:
+
+```sh
+rsvg-convert -w 920 assets/brand/banner.svg -o assets/brand/banner.png
+```
 
 ## Regenerate demo GIF
 

@@ -1,14 +1,5 @@
 <p align="center">
-  <img src="assets/brand/banner.svg" alt="gitkey — SSH keys and Git identity in one command" width="100%">
-</p>
-
-<p align="center">
-  <img src="assets/brand/logo.svg" alt="gitkey logo" width="72" height="72">
-</p>
-
-<p align="center">
-  <strong>Switch SSH keys and Git identities in one command</strong><br>
-  <sub>For developers and consultants juggling multiple clients, accounts, or GitHub profiles</sub>
+  <img src="assets/brand/banner.png" alt="gitkey - SSH keys and Git identity in one command" width="920">
 </p>
 
 <p align="center">
