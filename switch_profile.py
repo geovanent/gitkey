@@ -82,6 +82,20 @@ Ideal for consultants working with many clients/projects.
     python switch_profile.py --reset
     python switch_profile.py --reset -p santander
 
+🔹 Fix last commit (reopen for editing and recommit with current profile):
+    python switch_profile.py --fix
+    python switch_profile.py -f -p santander
+
+🔹 Bind a profile to a Git repository (per-repo SSH key, no global switch):
+    python switch_profile.py --bind -p santander
+    python switch_profile.py --bind -p personal /path/to/repo
+    python switch_profile.py --bind -p client1 --recursive ~/work/client1
+
+🔹 List or remove repository bindings:
+    python switch_profile.py --binds
+    python switch_profile.py --unbind
+    python switch_profile.py --unbind /path/to/repo
+
 ----------------------------------------------
  📌 ABOUT THE LOCK FILE
 ----------------------------------------------
@@ -94,6 +108,7 @@ This is used by auto-rotation mode.
 ==============================================
 """
 
+import json
 import os
 import sys
 import subprocess
@@ -104,7 +119,7 @@ from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(SCRIPT_DIR)
 
-# Check if script is in a subfolder (e.g., ~/.ssh/switch_profile_git/)
+# Check if script is in a subfolder (e.g., ~/.ssh/gitkey/)
 # If settings.py exists in script dir but not in parent, we're in a subfolder
 SCRIPT_HAS_SETTINGS = os.path.exists(os.path.join(SCRIPT_DIR, "settings.py")) or os.path.exists(os.path.join(SCRIPT_DIR, "settings-example.py"))
 PARENT_HAS_SETTINGS = os.path.exists(os.path.join(PARENT_DIR, "settings.py")) or os.path.exists(os.path.join(PARENT_DIR, "settings-example.py"))
@@ -119,8 +134,11 @@ else:
     SETTINGS_FILE = os.path.join(PATH_SSH, "settings.py")
 
 LOCK_FILENAME = os.path.join(PATH_SSH, "active_profile.lock")
+BINDINGS_FILE = os.path.join(SCRIPT_DIR, "repo_bindings.json")
 ALLOWED_SIGNERS_FILE = os.path.join(PATH_SSH, "allowed_signers")
 KEY_NAME = "id_ed25519"
+GITKEY_PROFILE_KEY = "gitkey.profile"
+SKIP_WALK_DIRS = {".git", "node_modules", "venv", ".venv", "__pycache__"}
 
 # Import PROFILES and GIT_GLOBAL_SCOPE from settings.py
 # Add script directory to path so we can import settings.py
@@ -479,6 +497,306 @@ def configure_git(profile_name: str):
     print(f"🧾 Git identity updated {scope_label} for profile: {profile_name}\n")
 
 
+def resolve_path(path: str) -> str:
+    """Return absolute, normalized path."""
+    return os.path.realpath(os.path.expanduser(path))
+
+
+def get_profile_key_paths(profile_name: str) -> tuple[str, str]:
+    """Return (private_key, public_key) paths for a profile."""
+    profile = PROFILES.get(profile_name)
+    if not profile:
+        sys.exit(
+            f"\nERROR: Profile '{profile_name}' not found.\n"
+            f"Available profiles: {', '.join(sorted(PROFILES.keys()))}\n"
+        )
+    folder = profile.get("folder")
+    if not folder:
+        sys.exit(f"\nERROR: Profile '{profile_name}' has no 'folder' defined.\n")
+    priv = os.path.join(PATH_SSH, folder, KEY_NAME)
+    pub = priv + ".pub"
+    if not os.path.exists(priv) or not os.path.exists(pub):
+        sys.exit(
+            f"\nERROR: SSH keys not found for profile '{profile_name}'.\n"
+            f"Expected:\n  {priv}\n  {pub}\n"
+        )
+    return priv, pub
+
+
+def build_ssh_command(private_key_path: str) -> str:
+    """Git core.sshCommand value that forces a specific identity."""
+    return f'ssh -i "{private_key_path}" -o IdentitiesOnly=yes'
+
+
+def find_git_root(path: str) -> str | None:
+    """Return Git repository root for path, or None."""
+    result = subprocess.run(
+        ["git", "-C", path, "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    return resolve_path(result.stdout.strip())
+
+
+def find_git_repos_under(root: str) -> list[str]:
+    """Find all Git repository roots under a directory tree."""
+    root = resolve_path(root)
+    if not os.path.isdir(root):
+        sys.exit(f"\nERROR: Not a directory: {root}\n")
+
+    repos: set[str] = set()
+    for dirpath, dirnames, _ in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_WALK_DIRS]
+        git_root = find_git_root(dirpath)
+        if git_root:
+            repos.add(git_root)
+
+    return sorted(repos)
+
+
+def load_bindings() -> dict[str, str]:
+    """Load repo path -> profile name bindings."""
+    if not os.path.exists(BINDINGS_FILE):
+        return {}
+    try:
+        with open(BINDINGS_FILE, "r") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return {}
+        return {resolve_path(k): v for k, v in data.items()}
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"⚠️  WARNING: Could not read {BINDINGS_FILE}: {e}")
+        return {}
+
+
+def save_bindings(bindings: dict[str, str]) -> None:
+    """Persist repo bindings to disk."""
+    try:
+        with open(BINDINGS_FILE, "w") as f:
+            json.dump(bindings, f, indent=2, sort_keys=True)
+            f.write("\n")
+    except OSError as e:
+        sys.exit(f"\nERROR: Could not write bindings file: {e}\n")
+
+
+def git_config_local(repo_root: str, key: str, value: str) -> tuple[bool, str]:
+    """Set a local Git config value inside a specific repository."""
+    result = subprocess.run(
+        ["git", "-C", repo_root, "config", "--local", key, value],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return True, ""
+    return False, result.stderr.decode().strip()
+
+
+def git_config_local_unset(repo_root: str, key: str) -> bool:
+    """Unset a local Git config value inside a specific repository."""
+    result = subprocess.run(
+        ["git", "-C", repo_root, "config", "--local", "--unset", key],
+        check=False,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def git_config_local_get(repo_root: str, key: str) -> str:
+    """Read a local Git config value from a specific repository."""
+    result = subprocess.run(
+        ["git", "-C", repo_root, "config", "--local", key],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def add_allowed_signers_entry(git_email: str, pub_key_path: str) -> bool:
+    """Add or update one email entry in allowed_signers using a public key file."""
+    if not git_email or not os.path.exists(pub_key_path):
+        return False
+
+    try:
+        with open(pub_key_path, "r") as f:
+            pub_key_content = f.read().strip()
+        parts = pub_key_content.split()
+        if len(parts) < 2:
+            return False
+        signer_line = f"{git_email} {parts[0]} {parts[1]}\n"
+
+        existing_lines: list[str] = []
+        if os.path.exists(ALLOWED_SIGNERS_FILE):
+            try:
+                os.chmod(ALLOWED_SIGNERS_FILE, 0o644)
+                with open(ALLOWED_SIGNERS_FILE, "r") as f:
+                    existing_lines = f.readlines()
+            except (PermissionError, OSError):
+                pass
+
+        existing_lines = [
+            line for line in existing_lines if not line.startswith(f"{git_email} ")
+        ]
+        existing_lines.append(signer_line)
+
+        with open(ALLOWED_SIGNERS_FILE, "w") as f:
+            f.writelines(existing_lines)
+        try:
+            os.chmod(ALLOWED_SIGNERS_FILE, 0o644)
+        except (PermissionError, OSError):
+            pass
+        return True
+    except Exception as e:
+        print(f"⚠️  WARNING: Failed to update allowed_signers: {e}")
+        return False
+
+
+def configure_repo_binding(repo_root: str, profile_name: str) -> None:
+    """Apply per-repository SSH key and Git identity (local config only)."""
+    profile = PROFILES.get(profile_name, {})
+    priv, pub = get_profile_key_paths(profile_name)
+    git_name = profile.get("git_name")
+    git_email = profile.get("git_email")
+    sign_commits = profile.get("sign_commits", False)
+
+    success, error = git_config_local(
+        repo_root, "core.sshCommand", build_ssh_command(priv)
+    )
+    if not success:
+        sys.exit(f"\nERROR: Failed to set core.sshCommand: {error}\n")
+
+    if git_name:
+        git_config_local(repo_root, "user.name", git_name)
+    if git_email:
+        git_config_local(repo_root, "user.email", git_email)
+
+    git_config_local(repo_root, GITKEY_PROFILE_KEY, profile_name)
+
+    if sign_commits:
+        add_allowed_signers_entry(git_email, pub)
+        subprocess.run(
+            [
+                "git",
+                "config",
+                "--global",
+                "gpg.ssh.allowedSignersFile",
+                ALLOWED_SIGNERS_FILE,
+            ],
+            check=False,
+        )
+        git_config_local(repo_root, "commit.gpgsign", "true")
+        git_config_local(repo_root, "tag.gpgsign", "true")
+        git_config_local(repo_root, "gpg.format", "ssh")
+        git_config_local(repo_root, "user.signingkey", pub)
+    else:
+        for key in ("commit.gpgsign", "tag.gpgsign", "gpg.format", "user.signingkey"):
+            git_config_local_unset(repo_root, key)
+
+
+def clear_repo_binding(repo_root: str) -> None:
+    """Remove per-repository binding from Git local config."""
+    for key in (
+        "core.sshCommand",
+        "user.name",
+        "user.email",
+        GITKEY_PROFILE_KEY,
+        "commit.gpgsign",
+        "tag.gpgsign",
+        "gpg.format",
+        "user.signingkey",
+    ):
+        git_config_local_unset(repo_root, key)
+
+
+def bind_repository(profile_name: str, path: str, recursive: bool = False) -> None:
+    """Bind a profile to one or more Git repositories under path."""
+    if profile_name not in PROFILES:
+        sys.exit(
+            f"\nERROR: Profile '{profile_name}' does not exist.\n"
+            f"Profiles: {', '.join(sorted(PROFILES.keys()))}\n"
+        )
+
+    get_profile_key_paths(profile_name)
+    target = resolve_path(path)
+
+    if recursive:
+        repo_roots = find_git_repos_under(target)
+        if not repo_roots:
+            sys.exit(f"\nERROR: No Git repositories found under: {target}\n")
+    else:
+        repo_root = find_git_root(target)
+        if not repo_root:
+            sys.exit(
+                f"\nERROR: Not a Git repository: {target}\n"
+                f"Run from inside a repo, pass a repo path, or use --recursive.\n"
+            )
+        repo_roots = [repo_root]
+
+    bindings = load_bindings()
+    for repo_root in repo_roots:
+        configure_repo_binding(repo_root, profile_name)
+        bindings[repo_root] = profile_name
+        print(f"🔗 Bound '{profile_name}' → {repo_root}")
+
+    save_bindings(bindings)
+    print(
+        f"\n✅ {len(repo_roots)} repository(ies) now use profile '{profile_name}' "
+        f"(SSH key stays in ~/.ssh/{PROFILES[profile_name]['folder']}/).\n"
+        f"   Global default key was not changed.\n"
+    )
+
+
+def unbind_repository(path: str) -> None:
+    """Remove profile binding from a Git repository."""
+    target = resolve_path(path)
+    repo_root = find_git_root(target)
+    if not repo_root:
+        sys.exit(
+            f"\nERROR: Not a Git repository: {target}\n"
+        )
+
+    bindings = load_bindings()
+    profile_name = bindings.pop(repo_root, None) or git_config_local_get(
+        repo_root, GITKEY_PROFILE_KEY
+    )
+
+    clear_repo_binding(repo_root)
+
+    if profile_name:
+        save_bindings(bindings)
+        print(f"\n✅ Removed binding '{profile_name}' from {repo_root}\n")
+    else:
+        save_bindings(bindings)
+        print(f"\n✅ Cleared local Git config in {repo_root} (no binding was recorded)\n")
+
+
+def list_bindings() -> None:
+    """Show all repository bindings."""
+    bindings = load_bindings()
+    if not bindings:
+        print("\nNo repository bindings configured.")
+        print("Use: gitkey --bind -p <profile> [path]\n")
+        return
+
+    print("\nRepository bindings (per-repo SSH keys):\n")
+    for repo_root in sorted(bindings):
+        profile_name = bindings[repo_root]
+        exists = "✓" if os.path.isdir(repo_root) else "⚠ missing"
+        active = git_config_local_get(repo_root, GITKEY_PROFILE_KEY)
+        status = ""
+        if active and active != profile_name:
+            status = f"  (git config: {active})"
+        elif not active:
+            status = "  (git config not set — run --bind again)"
+        folder = PROFILES.get(profile_name, {}).get("folder", "?")
+        print(f"  {exists}  {profile_name} ({folder}/)")
+        print(f"         {repo_root}{status}")
+    print()
+
+
 def reset_last_commit(profile_name: str):
     """Reset the author of the last commit to match the current profile."""
     if not is_git_repo():
@@ -558,8 +876,113 @@ def reset_last_commit(profile_name: str):
     print()
 
 
+def fix_last_commit(profile_name: str):
+    """Fix the last commit by reopening it for editing and recommitting with the current profile."""
+    if not is_git_repo():
+        sys.exit("\nERROR: Not in a Git repository. Cannot fix last commit.\n")
+    
+    # Check if there are any commits
+    result = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    
+    if result.returncode != 0 or not result.stdout.strip() or result.stdout.strip() == "0":
+        sys.exit("\nERROR: No commits found. Nothing to fix.\n")
+    
+    profile = PROFILES.get(profile_name)
+    if not profile:
+        sys.exit(
+            f"\nERROR: Profile '{profile_name}' not found.\n"
+            f"Available profiles: {', '.join(sorted(PROFILES.keys()))}\n"
+        )
+    
+    git_name = profile.get("git_name")
+    git_email = profile.get("git_email")
+    sign_commits = profile.get("sign_commits", False)
+    
+    if not git_name or not git_email:
+        sys.exit(
+            f"\nERROR: Profile '{profile_name}' does not have git_name and git_email configured.\n"
+        )
+    
+    # Get current commit info
+    result = subprocess.run(
+        ["git", "log", "-1", "--format=%an <%ae>%n%s", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        lines = result.stdout.strip().split('\n', 1)
+        current_author = lines[0] if len(lines) > 0 else "unknown"
+        current_message = lines[1] if len(lines) > 1 else ""
+    else:
+        current_author = "unknown"
+        current_message = ""
+    
+    print(f"\n🔧 Fixing last commit:")
+    print(f"   Current author: {current_author}")
+    print(f"   New author:     {git_name} <{git_email}>")
+    if current_message:
+        print(f"   Current message: {current_message[:50]}{'...' if len(current_message) > 50 else ''}")
+    
+    # Configure Git identity first
+    git_scope = "global" if GIT_GLOBAL_SCOPE else "local"
+    git_config_set(git_scope, "user.name", git_name)
+    git_config_set(git_scope, "user.email", git_email)
+    
+    # Configure Git for signing if needed
+    if sign_commits:
+        pub_key_path = os.path.join(PATH_SSH, KEY_NAME + ".pub")
+        if os.path.exists(pub_key_path):
+            update_allowed_signers(profile_name)
+            git_config_set(git_scope, "commit.gpgsign", "true")
+            git_config_set(git_scope, "tag.gpgsign", "true")
+            git_config_set(git_scope, "gpg.format", "ssh")
+            git_config_set(git_scope, "user.signingkey", pub_key_path)
+            print(f"   ✓ Commit signing configured (SSH)")
+        else:
+            print(f"   ⚠️  Warning: SSH public key not found. Commit will not be signed.")
+    else:
+        # Disable signing if profile doesn't require it
+        git_config_unset(git_scope, "commit.gpgsign")
+        git_config_unset(git_scope, "tag.gpgsign")
+        git_config_unset(git_scope, "gpg.format")
+        git_config_unset(git_scope, "user.signingkey")
+    
+    print(f"\n   Opening commit editor...")
+    print(f"   (You can edit the commit message if needed)")
+    
+    # Amend the commit (opens editor for message editing)
+    # This will use the current Git config (user.name, user.email) and signing settings
+    result = subprocess.run(
+        ["git", "commit", "--amend"],
+        check=False,
+    )
+    
+    if result.returncode != 0:
+        sys.exit(
+            f"\nERROR: Failed to amend commit.\n"
+            f"The commit was not modified.\n"
+        )
+    
+    print(f"\n   ✓ Commit fixed successfully")
+    if sign_commits:
+        print(f"   ✓ Commit signed with SSH key")
+    print()
+
+
 def main():
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        "directory",
+        nargs="?",
+        default=".",
+        help="Target directory for --bind / --unbind (default: current directory).",
+    )
     parser.add_argument(
         "-p",
         "--profile",
@@ -568,6 +991,30 @@ def main():
             "rotate between profiles. If omitted, an interactive "
             "selection menu will be shown."
         ),
+    )
+    parser.add_argument(
+        "--bind",
+        action="store_true",
+        help=(
+            "Bind a profile to a Git repository. Sets local core.sshCommand "
+            "and Git identity without changing the global SSH key."
+        ),
+    )
+    parser.add_argument(
+        "--unbind",
+        action="store_true",
+        help="Remove a profile binding from a Git repository.",
+    )
+    parser.add_argument(
+        "--binds",
+        action="store_true",
+        help="List all repositories bound to profiles.",
+    )
+    parser.add_argument(
+        "-r",
+        "--recursive",
+        action="store_true",
+        help="With --bind, bind all Git repositories under the given directory.",
     )
     parser.add_argument(
         "--no-git",
@@ -579,7 +1026,57 @@ def main():
         action="store_true",
         help="Reset the author of the last commit to match the current profile.",
     )
+    parser.add_argument(
+        "-f",
+        "--fix",
+        action="store_true",
+        help="Fix the last commit by reopening it for editing and recommitting with the current profile.",
+    )
     args = parser.parse_args()
+
+    if args.binds:
+        list_bindings()
+        return
+
+    if args.unbind:
+        unbind_repository(args.directory)
+        return
+
+    if args.bind:
+        if not args.profile:
+            sys.exit(
+                "\nERROR: --bind requires a profile (-p/--profile).\n"
+                "Example: gitkey --bind -p personal\n"
+            )
+        bind_repository(args.profile, args.directory, recursive=args.recursive)
+        return
+
+    # Handle --fix mode
+    if args.fix:
+        # Determine which profile to use for fix
+        if args.profile:
+            if args.profile not in PROFILES:
+                sys.exit(
+                    f"\nERROR: Profile '{args.profile}' does not exist.\n"
+                    f"Profiles: {', '.join(sorted(PROFILES.keys()))}\n"
+                )
+            profile_name = args.profile
+        else:
+            # Use the active profile from lock file
+            profile_name = read_lock()
+            if not profile_name or profile_name not in PROFILES:
+                sys.exit(
+                    "\nERROR: No active profile found.\n"
+                    "Please specify a profile with -p/--profile or switch to a profile first.\n"
+                )
+            print(f"Using active profile: {profile_name}")
+        
+        # Apply SSH key first (needed for signing)
+        copy_keys(profile_name)
+        
+        # Fix the commit
+        fix_last_commit(profile_name)
+        return
     
     # Handle --reset mode
     if args.reset:

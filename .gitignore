@@ -4,6 +4,9 @@ settings.py
 # Ignore lock file (local state)
 active_profile.lock
 
+# Per-repository bindings (local paths)
+repo_bindings.json
+
 # Python cache and compiled files
 __pycache__/
 *.py[cod]

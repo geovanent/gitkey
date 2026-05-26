@@ -29,6 +29,60 @@ Simple, fast, and dependency-free.
 - Works on macOS, Linux, WSL
 
 ------------------------------------------------------------
+🚀 GETTING STARTED
+------------------------------------------------------------
+
+If you haven't installed yet, jump to the **INSTALLATION** section below.
+
+**1. List the profiles available to you**
+
+The script reads profiles from `settings.py`. To see them quickly:
+
+```sh
+gitkey
+```
+
+This opens the interactive menu and prints every profile registered in `settings.py` with its folder:
+
+```sh
+Available SSH profiles:
+  1) clientA   (folder: clientA)
+  2) personal  (folder: personal)
+  3) toro      (folder: toro)
+```
+
+You can also inspect them directly in `~/.ssh/gitkey/settings.py`.
+
+**2. Activate a profile**
+
+```sh
+gitkey -p personal      # activate by name
+gitkey                   # pick from the interactive menu
+gitkey -p auto           # rotate to the next profile (alphabetical)
+```
+
+Useful variants:
+
+```sh
+gitkey -p clientA --no-git   # swap only the SSH key, keep current Git identity
+gitkey --reset               # rewrite the last commit author with the active profile
+gitkey -f                    # reopen the last commit and re-sign it
+gitkey --help                # full list of options
+
+**Per-repository mode (multiple keys at once):**
+
+```sh
+gitkey --bind -p clientA              # bind current repo to clientA key
+gitkey --bind -p personal ~/proj/foo  # bind a specific repo
+gitkey --bind -p clientA -r ~/work    # bind every Git repo under a folder
+gitkey --binds                        # list all bound repos
+gitkey --unbind                       # remove binding from current repo
+```
+```
+
+The SSH key, Git identity and (optional) commit signing are switched automatically.
+
+------------------------------------------------------------
 🗂 HOW TO CREATE A NEW CUSTOMER
 ------------------------------------------------------------
 ```sh
@@ -43,9 +97,9 @@ After cloning the repository into `~/.ssh/`, your structure should look like thi
 ```sh
 ~/.ssh/
     # Repository files
-    ssh-multi-profile-manager/    # or your chosen folder name
+    gitkey/
         switch_profile.py
-        change_keys               # CLI wrapper script (executable)
+        gitkey               # CLI wrapper script (executable)
         README.md
     
     # Auto-generated files (created by the script)
@@ -77,32 +131,28 @@ After cloning the repository into `~/.ssh/`, your structure should look like thi
 
 ### Quick Install (Recommended)
 
-1. **Clone the repository into `~/.ssh/`:**
+1. **Clone the repository into `~/.ssh/gitkey`:**
    ```sh
    cd ~/.ssh
-   git clone git@github.com:geovanent/switch_profile_git.git
-   # Or if you prefer a different name:
-   git clone git@github.com:geovanent/switch_profile_git.git switch_profile_git
+   git clone git@github.com:geovanent/gitkey.git gitkey
    ```
 
 2. **Make the wrapper script executable:**
    ```sh
-   chmod +x ~/.ssh/ssh-multi-profile-manager/change_keys
-   # Or if you used a different folder name:
-   chmod +x ~/.ssh/switch_profile_git/change_keys
+   chmod +x ~/.ssh/gitkey/gitkey
    ```
 
 3. **Create a symlink to make it globally accessible:**
 
    **Option A: Using /usr/local/bin (macOS/Linux - requires sudo):**
    ```sh
-   sudo ln -s ~/.ssh/ssh-multi-profile-manager/change_keys /usr/local/bin/change_keys
+   sudo ln -s ~/.ssh/gitkey/gitkey /usr/local/bin/gitkey
    ```
 
    **Option B: Using ~/.local/bin (Linux - no sudo needed):**
    ```sh
    mkdir -p ~/.local/bin
-   ln -s ~/.ssh/ssh-multi-profile-manager/change_keys ~/.local/bin/change_keys
+   ln -s ~/.ssh/gitkey/gitkey ~/.local/bin/gitkey
    # Add to PATH if not already there (add to ~/.bashrc or ~/.zshrc):
    export PATH="$HOME/.local/bin:$PATH"
    ```
@@ -110,7 +160,7 @@ After cloning the repository into `~/.ssh/`, your structure should look like thi
    **Option C: Add to PATH directly (macOS/Linux):**
    Add this line to your `~/.zshrc` (macOS) or `~/.bashrc`/`~/.zshrc` (Linux):
    ```sh
-   export PATH="$HOME/.ssh/ssh-multi-profile-manager:$PATH"
+   export PATH="$HOME/.ssh/gitkey:$PATH"
    ```
    Then reload your shell:
    ```sh
@@ -119,15 +169,15 @@ After cloning the repository into `~/.ssh/`, your structure should look like thi
 
 4. **Verify installation:**
    ```sh
-   change_keys --help
+   gitkey --help
    ```
 
-Now you can use `change_keys` from anywhere:
+Now you can use `gitkey` from anywhere:
 
 ```sh
-change_keys -p personal
-change_keys -p auto
-change_keys --no-git
+gitkey -p personal
+gitkey -p auto
+gitkey --no-git
 ```
 
 ### Manual Install (Alternative)
@@ -137,17 +187,17 @@ If you prefer to install manually without the wrapper:
 1. **Clone or download the repository:**
    ```sh
    cd ~/.ssh
-   git clone git@github.com:geovanent/switch_profile_git.git
+   git clone git@github.com:geovanent/gitkey.git gitkey
    ```
 
 2. **Make the Python script executable:**
    ```sh
-   chmod +x ~/.ssh/ssh-multi-profile-manager/change_keys.py
+   chmod +x ~/.ssh/gitkey/switch_profile.py
    ```
 
 3. **Create an alias (add to `~/.zshrc` or `~/.bashrc`):**
    ```sh
-   alias change_keys='python3 ~/.ssh/ssh-multi-profile-manager/switch_profile.py'
+   alias gitkey='python3 ~/.ssh/gitkey/switch_profile.py'
    ```
 
 4. **Reload your shell:**
@@ -233,41 +283,84 @@ PROFILES = {
 🖥 USAGE
 ------------------------------------------------------------
 
-After installation, use the `change_keys` command from anywhere:
+After installation, use the `gitkey` command from anywhere:
 
 **Switch to a specific profile:**
 ```sh
-change_keys -p toro
-change_keys -p personal
-change_keys -p clientX
+gitkey -p toro
+gitkey -p personal
+gitkey -p clientX
 ```
 
 **Interactive mode (shows menu to choose):**
 ```sh
-change_keys
+gitkey
 ```
 
 **Auto-rotate between profiles (alphabetical order):**
 ```sh
-change_keys -p auto
+gitkey -p auto
 ```
 Rotation order is alphabetical:
     personal -> santander -> toro -> clientX -> personal -> ...
 
 **Switch SSH key only (skip Git identity):**
 ```sh
-change_keys -p santander --no-git
+gitkey -p santander --no-git
 ```
 
 **Show help:**
 ```sh
-change_keys --help
+gitkey --help
 ```
 
 **Note:** If you didn't install the wrapper script, you can still use:
 ```sh
-python3 ~/.ssh/ssh-multi-profile-manager/switch_profile.py -p personal
+python3 ~/.ssh/gitkey/switch_profile.py -p personal
 ```
+
+------------------------------------------------------------
+📂 PER-REPOSITORY BINDINGS (MULTIPLE KEYS AT ONCE)
+------------------------------------------------------------
+
+By default, `gitkey -p <profile>` replaces the **global** SSH key in `~/.ssh/id_ed25519`.
+That works for one identity at a time.
+
+To work on **several Git repositories with different SSH keys simultaneously**, bind each
+repository to a profile. The tool sets **local** Git config only (`core.sshCommand`,
+`user.name`, `user.email`) and does **not** change your global default key.
+
+**Bind the current repository:**
+```sh
+cd ~/work/client-a/my-repo
+gitkey --bind -p clientA
+```
+
+**Bind a specific path:**
+```sh
+gitkey --bind -p personal ~/projects/my-side-project
+```
+
+**Bind every Git repo under a folder:**
+```sh
+gitkey --bind -p clientA --recursive ~/work/client-a
+```
+
+**List bindings:**
+```sh
+gitkey --binds
+```
+
+**Remove a binding:**
+```sh
+cd ~/work/client-a/my-repo
+gitkey --unbind
+```
+
+Each bound repo uses `ssh -i ~/.ssh/<profile-folder>/id_ed25519` for `git fetch`, `git push`,
+and `git clone` operations in that repo only.
+
+Bindings are stored in `~/.ssh/gitkey/repo_bindings.json`.
 
 ------------------------------------------------------------
 🔐 SSH COMMIT SIGNING
@@ -307,7 +400,7 @@ The script supports SSH commit signing (requires Git 2.34+).
    - This creates both `id_ed25519` (private) and `id_ed25519.pub` (public)
 
 3. **Add the profile to the script:**
-   Edit `change_keys.py` and add:
+   Edit `settings.py` and add:
    ```python
    "clientX": {
        "folder": "clientX",
@@ -319,7 +412,7 @@ The script supports SSH commit signing (requires Git 2.34+).
 
 4. **Switch to the profile:**
    ```sh
-   change_keys -p clientX
+   gitkey -p clientX
    ```
    The script will automatically:
    - Copy the SSH keys to `~/.ssh/id_ed25519` and `~/.ssh/id_ed25519.pub`
@@ -429,11 +522,11 @@ git log --show-signature
 🔧 TROUBLESHOOTING - CLI Wrapper
 ------------------------------------------------------------
 
-**Command `change_keys` not found:**
+**Command `gitkey` not found:**
 - Verify the symlink was created correctly:
   ```sh
-  ls -la /usr/local/bin/change_keys  # Option A
-  ls -la ~/.local/bin/change_keys     # Option B
+  ls -la /usr/local/bin/gitkey  # Option A
+  ls -la ~/.local/bin/gitkey     # Option B
   ```
 - Check if the directory is in your PATH:
   ```sh
@@ -446,10 +539,11 @@ git log --show-signature
 
 **Script not found error:**
 - The wrapper looks for `switch_profile.py` in these locations:
+  - `~/.ssh/gitkey/switch_profile.py`
   - `~/.ssh/switch_profile.py`
-  - `~/.ssh/ssh-multi-profile-manager/switch_profile.py`
-  - `~/.ssh/switch_profile_git/switch_profile.py`
-  - `~/.ssh/ssh-profile-manager/switch_profile.py`
+  - `~/.ssh/switch_profile_git/switch_profile.py` (legacy)
+  - `~/.ssh/ssh-multi-profile-manager/switch_profile.py` (legacy)
+  - `~/.ssh/ssh-profile-manager/switch_profile.py` (legacy)
 - If your repository is in a different location, either:
   - Move it to one of the locations above, or
   - Create a symlink: `ln -s /path/to/repo/switch_profile.py ~/.ssh/switch_profile.py`
@@ -457,7 +551,7 @@ git log --show-signature
 **Permission denied:**
 - Make sure the wrapper script is executable:
   ```sh
-  chmod +x ~/.ssh/ssh-multi-profile-manager/change_keys
+  chmod +x ~/.ssh/gitkey/gitkey
   ```
 
 **Python not found:**

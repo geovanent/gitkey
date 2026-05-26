@@ -8,8 +8,9 @@
 # Try common locations where the repository might be cloned
 POSSIBLE_PATHS=(
     "$HOME/.ssh/switch_profile.py"
-    "$HOME/.ssh/ssh-multi-profile-manager/switch_profile.py"
+    "$HOME/.ssh/gitkey/switch_profile.py"
     "$HOME/.ssh/switch_profile_git/switch_profile.py"
+    "$HOME/.ssh/ssh-multi-profile-manager/switch_profile.py"
     "$HOME/.ssh/ssh-profile-manager/switch_profile.py"
 )
 
@@ -62,4 +63,3 @@ fi
 
 # Execute the Python script with all passed arguments
 exec "$PYTHON_CMD" "$SCRIPT_PATH" "$@"
-
