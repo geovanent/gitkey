@@ -9,27 +9,44 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo/demo.gif" alt="gitkey demo — switch profile and bind repository" width="720">
+  <img src="assets/demo/demo.gif" alt="gitkey demo" width="720">
 </p>
+
+<p align="center">
+  <strong>One CLI for every Git identity you juggle.</strong><br>
+  Switch SSH keys, set <code>user.name</code> / <code>user.email</code>, enable signed commits,<br>
+  or bind a key to a single repo — without editing configs by hand.
+</p>
+
+<details>
+<summary>Project layout</summary>
+
+```text
+gitkey/
+├── gitkey          CLI entrypoint
+├── install.sh      installer
+├── lib/            application code
+├── docs/           guides
+├── assets/         readme images
+└── scripts/        maintainer tools
+```
+
+Your config: `~/.ssh/gitkey/settings.py`
+
+</details>
 
 ---
 
-## What it does
+## Why gitkey?
 
-| Mode | Command | Use when |
-|:----:|---------|----------|
-| 🌐 **Global** | `gitkey -p personal` | One active SSH key for everything |
-| 📁 **Per repo** | `gitkey --bind -p clientA` | Several repos open at once, each with its own key |
+| Problem | gitkey |
+|---------|--------|
+| `git push` with the wrong GitHub account | Switch profile in one command |
+| Two clients open at the same time | `--bind` per repository |
+| Unsigned commits on client work | Toggle **signed commits** per profile |
+| New client = manual `ssh-keygen` + edit files | `gitkey --new` wizard |
 
-```text
-~/.ssh/
-├── gitkey/              ← this tool
-├── personal/id_ed25519
-├── clientA/id_ed25519
-└── id_ed25519           ← active key (global mode)
-```
-
-Pure Python · no extra runtime dependencies · macOS, Linux, WSL & Windows
+**Signed commits (SSH)** — enable per client in the config menu. gitkey sets up `allowed_signers`, `commit.gpgsign`, and the signing key. Add the public key on GitHub as a **Signing Key** → commits show as Verified.
 
 ---
 
@@ -40,21 +57,11 @@ curl -fsSL https://raw.githubusercontent.com/geovanent/gitkey/main/install.sh | 
 ```
 
 <details>
-<summary>Other platforms & manual install</summary>
-
-**From clone (macOS / Linux / WSL):**
+<summary>Clone install</summary>
 
 ```sh
 git clone git@github.com:geovanent/gitkey.git ~/.ssh/gitkey
 cd ~/.ssh/gitkey && ./install
-```
-
-**Windows (PowerShell):**
-
-```powershell
-git clone git@github.com:geovanent/gitkey.git $env:USERPROFILE\.ssh\gitkey
-cd $env:USERPROFILE\.ssh\gitkey
-powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 </details>
@@ -63,86 +70,62 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 ## Quick start
 
-**1.** Edit `~/.ssh/gitkey/settings.py`:
-
-```python
-PROFILES = {
-    "personal": {
-        "folder": "personal",
-        "git_name": "Your Name",
-        "git_email": "you@example.com",
-    },
-    "clientA": {
-        "folder": "clientA",
-        "git_name": "Your Name (Client A)",
-        "git_email": "dev@clienta.com",
-    },
-}
+```sh
+gitkey --new          # new client + SSH key + profile (wizard)
+gitkey                # menu: pick profile, configure, or create
+gitkey -p personal    # switch global key + Git identity
+gitkey --bind -p clientA   # this repo only — keep other keys active
 ```
 
-**2.** Create keys:
+**Settings UI** (toggle signed commits, edit email, regenerate keys):
 
 ```sh
-ssh-keygen -t ed25519 -f ~/.ssh/personal/id_ed25519 -C "you@example.com"
-ssh-keygen -t ed25519 -f ~/.ssh/clientA/id_ed25519 -C "dev@clienta.com"
-```
-
-**3.** Go:
-
-```sh
-gitkey -p personal          # global switch
-gitkey --bind -p clientA    # this repo only
+gitkey --config
 ```
 
 ---
 
-## Usage
+## Commands
 
-<table>
-<tr><td><b>Global switch</b></td><td>
-
-```sh
-gitkey -p personal
-gitkey -p auto              # rotate profiles
-gitkey -p clientA --no-git  # SSH only
-gitkey --reset / gitkey -f  # fix last commit
-```
-
-</td></tr>
-<tr><td><b>Per-repository</b></td><td>
+| Command | What it does |
+|---------|----------------|
+| `gitkey` | Interactive menu — switch, **new client**, **settings** |
+| `gitkey --new` | Wizard: profile + `ssh-keygen` + save to `settings.py` |
+| `gitkey --config` | Per-client settings: signing on/off, name, email, keys |
+| `gitkey -p <name>` | Activate profile globally |
+| `gitkey --bind -p <name>` | Bind profile to current repo |
+| `gitkey --binds` | List repo bindings |
+| `gitkey -p auto` | Rotate to next profile |
 
 ```sh
-gitkey --bind -p clientA
-gitkey --binds
+gitkey -p clientA --no-git    # SSH key only
+gitkey --bind -p clientA -r ~/work/client   # bind all repos under a folder
 gitkey --unbind
-gitkey --bind -p clientA -r ~/work/client
+gitkey --reset / gitkey -f    # fix last commit author
 ```
-
-</td></tr>
-</table>
-
-| Flag | Description |
-|------|-------------|
-| `-p`, `--profile` | Profile name or `auto` |
-| `--bind` / `--unbind` / `--binds` | Per-repo SSH + Git config |
-| `-r`, `--recursive` | Bind every repo under a path |
-| `--no-git` | SSH key only |
-| `-h`, `--help` | Full help |
 
 ---
 
-## Documentation
+## Two modes
 
-| | |
-|---|---|
-| [Configuration](docs/configuration.md) | Profiles, folders, new clients |
-| [Commit signing](docs/commit-signing.md) | SSH signatures on GitHub |
+| | Global | Per repository |
+|---|--------|----------------|
+| **Command** | `gitkey -p personal` | `gitkey --bind -p clientA` |
+| **SSH key** | Replaces `~/.ssh/id_ed25519` | Local `core.sshCommand` only |
+| **Best for** | One identity at a time | Several repos, different keys |
+
+---
+
+## Docs
+
+| Guide | Topic |
+|-------|--------|
+| [Configuration](docs/configuration.md) | `settings.py`, folders |
+| [Commit signing](docs/commit-signing.md) | GitHub Verified badge |
 | [Troubleshooting](docs/troubleshooting.md) | Common fixes |
-| [Brand assets](docs/brand.md) | Colors, logos, regenerate GIF |
 
 ---
 
 <p align="center">
-  <sub>MIT License · <a href="https://github.com/geovanent/gitkey">github.com/geovanent/gitkey</a></sub><br>
-  <sub>If this helps you, consider starring the repo</sub>
+  <sub>MIT · <a href="https://github.com/geovanent/gitkey">github.com/geovanent/gitkey</a></sub>
 </p>

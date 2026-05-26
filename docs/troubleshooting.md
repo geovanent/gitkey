@@ -20,8 +20,9 @@ echo $PATH | tr ':' '\n' | grep local/bin
 
 The CLI looks for the script in:
 
-- `~/.ssh/gitkey/switch_profile.py`
-- `~/.ssh/switch_profile.py`
+- `~/.ssh/gitkey/lib/switch_profile.py`
+- `~/.ssh/gitkey/switch_profile.py` (legacy)
+- `~/.ssh/switch_profile.py` (legacy)
 
 Reinstall into the default location:
 

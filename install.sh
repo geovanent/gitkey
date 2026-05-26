@@ -6,7 +6,7 @@ REPO_URL="git@github.com:geovanent/gitkey.git"
 INSTALL_DIR="${HOME}/.ssh/gitkey"
 BIN_DIR="${HOME}/.local/bin"
 PATH_MARKER="# added by gitkey installer"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 info()  { printf '\033[36m→\033[0m %s\n' "$*"; }
 ok()    { printf '\033[32m✓\033[0m %s\n' "$*"; }
@@ -22,10 +22,7 @@ detect_os() {
 }
 
 require_python() {
-  if command -v python3 &>/dev/null; then
-    return 0
-  fi
-  die "Python 3 is required. Install it and run this script again."
+  command -v python3 &>/dev/null || die "Python 3 is required."
 }
 
 require_git() {
@@ -39,25 +36,30 @@ same_dir() {
   [[ "$a" == "$b" ]]
 }
 
+has_app() {
+  [[ -f "$1/lib/switch_profile.py" ]]
+}
+
 ensure_repo() {
   if [[ -d "${INSTALL_DIR}/.git" ]]; then
     info "Updating ${INSTALL_DIR}..."
     git -C "${INSTALL_DIR}" pull --ff-only 2>/dev/null \
       || git -C "${INSTALL_DIR}" pull 2>/dev/null \
-      || warn "Could not update via git pull; continuing with existing files."
-  elif [[ -f "${SCRIPT_DIR}/switch_profile.py" ]] && same_dir "${SCRIPT_DIR}" "${INSTALL_DIR}"; then
+      || warn "Could not update via git pull; continuing."
+  elif has_app "${REPO_ROOT}" && same_dir "${REPO_ROOT}" "${INSTALL_DIR}"; then
     info "Using existing installation at ${INSTALL_DIR}"
-  elif [[ -f "${SCRIPT_DIR}/switch_profile.py" ]]; then
-    info "Installing from ${SCRIPT_DIR}..."
+  elif has_app "${REPO_ROOT}"; then
+    info "Installing from ${REPO_ROOT}..."
     mkdir -p "${INSTALL_DIR}"
     if command -v rsync &>/dev/null; then
       rsync -a \
         --exclude '.git' \
         --exclude 'settings.py' \
         --exclude 'repo_bindings.json' \
-        "${SCRIPT_DIR}/" "${INSTALL_DIR}/"
+        --exclude '__pycache__' \
+        "${REPO_ROOT}/" "${INSTALL_DIR}/"
     else
-      cp -R "${SCRIPT_DIR}/." "${INSTALL_DIR}/"
+      cp -R "${REPO_ROOT}/." "${INSTALL_DIR}/"
     fi
   else
     require_git
@@ -68,11 +70,11 @@ ensure_repo() {
 }
 
 setup_settings() {
-  local example="${INSTALL_DIR}/settings-example.py"
+  local example="${INSTALL_DIR}/lib/settings-example.py"
   local settings="${INSTALL_DIR}/settings.py"
   if [[ ! -f "${settings}" ]]; then
     cp "${example}" "${settings}"
-    ok "Created ${settings} — edit it with your profiles"
+    ok "Created ${settings}"
   else
     ok "Keeping existing ${settings}"
   fi
@@ -81,7 +83,7 @@ setup_settings() {
 link_cli() {
   mkdir -p "${BIN_DIR}"
   ln -sf "${INSTALL_DIR}/gitkey" "${BIN_DIR}/gitkey"
-  chmod +x "${INSTALL_DIR}/gitkey" "${INSTALL_DIR}/switch_profile.py" 2>/dev/null || true
+  chmod +x "${INSTALL_DIR}/gitkey" "${INSTALL_DIR}/lib/switch_profile.py" 2>/dev/null || true
   ok "Linked gitkey → ${BIN_DIR}/gitkey"
 }
 
@@ -141,8 +143,8 @@ main() {
   echo ""
   echo "  Next steps:"
   echo "    1. Edit ~/.ssh/gitkey/settings.py"
-  echo "    2. Create keys: ssh-keygen -t ed25519 -f ~/.ssh/<profile>/id_ed25519"
-  echo "    3. Run: gitkey -p <profile>   or   gitkey"
+  echo "    2. ssh-keygen -t ed25519 -f ~/.ssh/<profile>/id_ed25519"
+  echo "    3. gitkey"
   echo ""
 }
 

@@ -112,50 +112,55 @@ import json
 import os
 import sys
 import subprocess
+from pathlib import Path
 from shutil import copyfile
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
-# Determine SSH directory: if script is in a subfolder, use parent directory (~/.ssh/)
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PARENT_DIR = os.path.dirname(SCRIPT_DIR)
-
-# Check if script is in a subfolder (e.g., ~/.ssh/gitkey/)
-# If settings.py exists in script dir but not in parent, we're in a subfolder
-SCRIPT_HAS_SETTINGS = os.path.exists(os.path.join(SCRIPT_DIR, "settings.py")) or os.path.exists(os.path.join(SCRIPT_DIR, "settings-example.py"))
-PARENT_HAS_SETTINGS = os.path.exists(os.path.join(PARENT_DIR, "settings.py")) or os.path.exists(os.path.join(PARENT_DIR, "settings-example.py"))
-
-if SCRIPT_HAS_SETTINGS and not PARENT_HAS_SETTINGS:
-    # Script is in a subfolder, use parent as PATH_SSH (~/.ssh/)
-    PATH_SSH = PARENT_DIR
-    SETTINGS_FILE = os.path.join(SCRIPT_DIR, "settings.py")  # settings.py stays with script
+# Paths: lib/ = code, install root = settings + bindings, ~/.ssh/ = keys + lock
+LIB_DIR = os.path.dirname(os.path.abspath(__file__))
+if os.path.basename(LIB_DIR) == "lib":
+    INSTALL_DIR = os.path.dirname(LIB_DIR)
+    PATH_SSH = os.path.dirname(INSTALL_DIR)
 else:
-    # Script is at root level (~/.ssh/)
-    PATH_SSH = SCRIPT_DIR
-    SETTINGS_FILE = os.path.join(PATH_SSH, "settings.py")
+    # Legacy flat layout (~/.ssh/gitkey/switch_profile.py)
+    INSTALL_DIR = LIB_DIR
+    PATH_SSH = (
+        os.path.dirname(INSTALL_DIR)
+        if os.path.basename(INSTALL_DIR) == "gitkey"
+        else INSTALL_DIR
+    )
 
+SETTINGS_FILE = os.path.join(INSTALL_DIR, "settings.py")
+SETTINGS_EXAMPLE = os.path.join(LIB_DIR, "settings-example.py")
 LOCK_FILENAME = os.path.join(PATH_SSH, "active_profile.lock")
-BINDINGS_FILE = os.path.join(SCRIPT_DIR, "repo_bindings.json")
+BINDINGS_FILE = os.path.join(INSTALL_DIR, "repo_bindings.json")
 ALLOWED_SIGNERS_FILE = os.path.join(PATH_SSH, "allowed_signers")
 KEY_NAME = "id_ed25519"
 GITKEY_PROFILE_KEY = "gitkey.profile"
 SKIP_WALK_DIRS = {".git", "node_modules", "venv", ".venv", "__pycache__"}
 
-# Import PROFILES and GIT_GLOBAL_SCOPE from settings.py
-# Add script directory to path so we can import settings.py
-if SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, SCRIPT_DIR)
+if LIB_DIR not in sys.path:
+    sys.path.insert(0, LIB_DIR)
+if INSTALL_DIR not in sys.path:
+    sys.path.insert(0, INSTALL_DIR)
 
 try:
     from settings import PROFILES, GIT_GLOBAL_SCOPE
 except ImportError:
-    example_file = os.path.join(SCRIPT_DIR, "settings-example.py")
-    sys.exit(
-        f"\nERROR: settings.py not found.\n"
-        f"Please copy {example_file} to {SETTINGS_FILE} and configure your settings.\n"
-        f"Example: cp {example_file} {SETTINGS_FILE}\n"
-    )
+    if not os.path.exists(SETTINGS_FILE) and not any(
+        f in sys.argv for f in ("--new", "--config")
+    ):
+        sys.exit(
+            f"\nERROR: settings.py not found.\n"
+            f"Please copy {SETTINGS_EXAMPLE} to {SETTINGS_FILE}\n"
+            f"Or run: gitkey --new\n"
+        )
+    PROFILES = {}
+    GIT_GLOBAL_SCOPE = True
 except Exception as e:
     sys.exit(f"\nERROR: Failed to load settings.py: {e}\n")
+
+from profile_wizard import menu_config, pick_profile_interactive, wizard_new_profile
 
 
 def read_lock():
@@ -181,38 +186,29 @@ def get_next_profile_name(current: str | None) -> str:
     return names[(idx + 1) % len(names)]
 
 
-def ask_profile_interactively() -> str:
-    """Prompt the user to choose a profile by number or name."""
-    if not PROFILES:
-        sys.exit("\nERROR: No profiles defined in PROFILES.\n")
+def reload_profiles_config():
+    global PROFILES, GIT_GLOBAL_SCOPE
+    from settings_io import reload_settings_module
 
-    names = sorted(PROFILES.keys())
+    PROFILES, GIT_GLOBAL_SCOPE = reload_settings_module(INSTALL_DIR)
 
-    print("\nAvailable SSH profiles:")
-    for idx, name in enumerate(names, start=1):
-        folder = PROFILES[name].get("folder", "-")
-        print(f"  {idx}) {name}  (folder: {folder})")
 
-    while True:
-        choice = input("\nSelect profile by number or name: ").strip()
-        if not choice:
-            print("Please enter a value.")
-            continue
-
-        # If number was typed
-        if choice.isdigit():
-            i = int(choice)
-            if 1 <= i <= len(names):
-                selected = names[i - 1]
-                print(f"→ Selected profile: {selected}")
-                return selected
-
-        # Try by exact name
-        if choice in PROFILES:
-            print(f"→ Selected profile: {choice}")
-            return choice
-
-        print("Invalid selection, please try again.")
+def interactive_pick_profile() -> str | None:
+    """Menu: switch profile, create new client, or open settings."""
+    global PROFILES, GIT_GLOBAL_SCOPE
+    profiles, scope, name = pick_profile_interactive(
+        PATH_SSH,
+        Path(SETTINGS_FILE),
+        INSTALL_DIR,
+        dict(PROFILES),
+        GIT_GLOBAL_SCOPE,
+        KEY_NAME,
+    )
+    PROFILES = profiles
+    GIT_GLOBAL_SCOPE = scope
+    if name:
+        print(f"\n→ Selected profile: {name}")
+    return name
 
 
 def copy_keys(profile_name: str):
@@ -1032,7 +1028,57 @@ def main():
         action="store_true",
         help="Fix the last commit by reopening it for editing and recommitting with the current profile.",
     )
+    parser.add_argument(
+        "--new",
+        action="store_true",
+        help="Create a new client profile and SSH key (interactive wizard).",
+    )
+    parser.add_argument(
+        "--config",
+        action="store_true",
+        help="Open visual settings: toggle signed commits, edit identity, manage keys.",
+    )
     args = parser.parse_args()
+
+    global PROFILES, GIT_GLOBAL_SCOPE
+
+    if (args.new or args.config) and not os.path.exists(SETTINGS_FILE):
+        example = SETTINGS_EXAMPLE
+        if os.path.exists(example):
+            copyfile(example, SETTINGS_FILE)
+            reload_profiles_config()
+        else:
+            sys.exit(f"\nERROR: {SETTINGS_FILE} not found and no settings-example.py.\n")
+
+    if args.config:
+        PROFILES, GIT_GLOBAL_SCOPE = menu_config(
+            PATH_SSH,
+            Path(SETTINGS_FILE),
+            INSTALL_DIR,
+            dict(PROFILES),
+            GIT_GLOBAL_SCOPE,
+            KEY_NAME,
+        )
+        return
+
+    if args.new:
+        PROFILES, GIT_GLOBAL_SCOPE, created = wizard_new_profile(
+            PATH_SSH,
+            Path(SETTINGS_FILE),
+            INSTALL_DIR,
+            dict(PROFILES),
+            GIT_GLOBAL_SCOPE,
+            KEY_NAME,
+        )
+        if not created:
+            return
+        if args.profile and args.profile != created:
+            print(f"Note: ignoring -p {args.profile}, using new profile '{created}'")
+        write_lock(created)
+        copy_keys(created)
+        if not args.no_git:
+            configure_git(created)
+        return
 
     if args.binds:
         list_bindings()
@@ -1107,8 +1153,9 @@ def main():
 
     # Decide which profile to use
     if args.profile is None:
-        # Interactive mode
-        profile_name = ask_profile_interactively()
+        profile_name = interactive_pick_profile()
+        if profile_name is None:
+            return
     elif args.profile == "auto":
         # Auto-rotate mode
         current = read_lock()

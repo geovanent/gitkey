@@ -12,7 +12,7 @@ except ImportError:
     print("Install Pillow: pip install pillow", file=sys.stderr)
     sys.exit(1)
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1]  # repo root
 OUT = ROOT / "assets" / "demo" / "demo.gif"
 
 # Brand palette

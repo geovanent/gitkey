@@ -1,11 +1,19 @@
 # Configuration
 
-## settings.py
-
-Copy from the example on first install (the installer does this automatically):
+## Interactive (recommended)
 
 ```sh
-cp ~/.ssh/gitkey/settings-example.py ~/.ssh/gitkey/settings.py
+gitkey --new       # new client + SSH key wizard
+gitkey --config    # toggle signed commits, edit name/email, regenerate keys
+gitkey             # same options from the main menu
+```
+
+## settings.py
+
+Created on install, or copy manually:
+
+```sh
+cp ~/.ssh/gitkey/lib/settings-example.py ~/.ssh/gitkey/settings.py
 ```
 
 ### Profile fields
@@ -42,9 +50,10 @@ PROFILES = {
 ```text
 ~/.ssh/
 ├── gitkey/
-│   ├── switch_profile.py
-│   ├── settings.py
-│   └── repo_bindings.json    # auto-generated (per-repo mode)
+│   ├── gitkey                # CLI wrapper
+│   ├── settings.py           # your profiles (not in git)
+│   ├── repo_bindings.json    # auto-generated (per-repo mode)
+│   └── lib/                  # application code
 ├── personal/
 │   ├── id_ed25519
 │   └── id_ed25519.pub

@@ -1,15 +1,13 @@
-# Ignore real settings file (contains sensitive client data)
+# User config & runtime data (live in install root, not in lib/)
 settings.py
-
-# Ignore lock file (local state)
+repo_bindings.json
 active_profile.lock
 
-# Per-repository bindings (local paths)
-repo_bindings.json
-
-# Python cache and compiled files
+# Python
 __pycache__/
 *.py[cod]
+lib/__pycache__/
+
 *$py.class
 *.so
 .Python

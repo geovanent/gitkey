@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Regenerate assets/demo/demo.gif
 set -euo pipefail
-cd "$(dirname "$0")/.."
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 if command -v vhs &>/dev/null; then
-  vhs demo.tape
+  vhs scripts/demo.tape
   mv -f assets/demo/demo-vhs.gif assets/demo/demo.gif 2>/dev/null || true
   echo "✓ Generated with VHS"
 else

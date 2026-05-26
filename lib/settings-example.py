@@ -7,11 +7,10 @@
 # Default: True
 GIT_GLOBAL_SCOPE = True
 
-# Per-repository bindings (multiple keys at once):
-#   gitkey --bind -p client1          # in a repo, or pass a path
-#   gitkey --binds                    # list bindings
-#   gitkey --unbind                   # remove binding
-# This sets core.sshCommand locally and does not change ~/.ssh/id_ed25519.
+# Quick commands:
+#   gitkey --new      # wizard: new client + ssh-keygen
+#   gitkey --config   # toggle sign_commits per client, edit identity
+#   gitkey --bind -p client1   # per-repo SSH key (multiple keys at once)
 
 # SSH Profiles configuration
 PROFILES = {
