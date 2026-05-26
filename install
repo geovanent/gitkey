@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Detect OS and run the appropriate installer
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    if command -v powershell.exe &>/dev/null; then
+      exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${ROOT}/install.ps1"
+    fi
+    echo "On Windows, run: powershell -ExecutionPolicy Bypass -File install.ps1" >&2
+    exit 1
+    ;;
+  *)
+    exec bash "${ROOT}/install.sh" "$@"
+    ;;
+esac
