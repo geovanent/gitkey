@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from profile_status import find_git_root, get_active_context
 from settings_io import write_settings
 from terminal_ui import (
     accent,
@@ -15,6 +16,7 @@ from terminal_ui import (
     key_cell,
     menu_key,
     muted,
+    ok,
     print_header,
     print_menu_line,
     print_msg_error,
@@ -24,6 +26,7 @@ from terminal_ui import (
     profile_name,
     sign_cell,
     table_header,
+    warn,
 )
 
 
@@ -113,7 +116,49 @@ def save_and_reload(
     return settings_io.reload_settings_module(script_dir)
 
 
-def print_profiles_table(path_ssh: str, profiles: dict, key_name: str) -> None:
+def print_active_status(
+    path_ssh: str,
+    install_dir: str,
+    profiles: dict,
+    key_name: str,
+    lock_path: str,
+    bindings_file: str,
+    cwd: str | None = None,
+) -> dict:
+    """Show global / per-repo active profile and return context dict."""
+    ctx = get_active_context(
+        path_ssh, install_dir, profiles, key_name, lock_path, bindings_file, cwd
+    )
+    global_p = ctx["global"]
+    repo_p = ctx["repo_profile"]
+    repo_root = ctx["repo_root"]
+
+    print(f"  {muted('Active now:')}")
+    if global_p and global_p in profiles:
+        print(f"    {muted('Global:')}  {profile_name(global_p)}")
+    elif global_p:
+        print(f"    {muted('Global:')}  {global_p}")
+    else:
+        print(f"    {muted('Global:')}  {warn('not set')}")
+
+    if repo_root:
+        short_repo = _clip(repo_root.replace(os.path.expanduser("~"), "~"), 42)
+        if repo_p and repo_p in profiles:
+            print(f"    {muted('In repo:')}  {profile_name(repo_p)}  {muted(short_repo)}")
+        else:
+            print(f"    {muted('In repo:')}  {warn('none')}  {muted(f'(uses global) · {short_repo}')}")
+    print()
+    return ctx
+
+
+def print_profiles_table(
+    path_ssh: str,
+    profiles: dict,
+    key_name: str,
+    *,
+    active_global: str | None = None,
+    active_repo: str | None = None,
+) -> None:
     """One row per profile — display only, no actions in the footer."""
     width = _term_width()
     col_num, col_name, col_sign, col_key = 3, 12, 4, 3
@@ -139,7 +184,13 @@ def print_profiles_table(path_ssh: str, profiles: dict, key_name: str) -> None:
         num = menu_key(str(i))
         pname = profile_name(_clip(name, col_name))
         pad = " " * max(0, col_name - len(_clip(name, col_name)))
-        print(f"  {num:>{col_num - 1}}  {pname}{pad} {sign} {key}  {email}")
+        tags: list[str] = []
+        if active_global and name == active_global:
+            tags.append(ok("global"))
+        if active_repo and name == active_repo:
+            tags.append(accent("repo"))
+        tag_str = ("  " + " · ".join(tags)) if tags else ""
+        print(f"  {num:>{col_num - 1}}  {pname}{pad} {sign} {key}  {email}{tag_str}")
     print_rule(width)
 
 
@@ -187,13 +238,32 @@ def screen_pick_profile(
     profiles: dict,
     key_name: str,
     *,
+    install_dir: str,
+    lock_path: str,
+    bindings_file: str,
     title: str,
     back_label: str = "Back",
+    cwd: str | None = None,
 ) -> str | None:
     """Show table and ask for a profile number. Returns None on back."""
     while True:
         _header(title)
-        print_profiles_table(path_ssh, profiles, key_name)
+        ctx = print_active_status(
+            path_ssh,
+            install_dir,
+            profiles,
+            key_name,
+            lock_path,
+            bindings_file,
+            cwd,
+        )
+        print_profiles_table(
+            path_ssh,
+            profiles,
+            key_name,
+            active_global=ctx.get("global"),
+            active_repo=ctx.get("repo_profile"),
+        )
         print_menu_line("0", back_label)
         choice = _choice("Profile number")
 
@@ -203,6 +273,36 @@ def screen_pick_profile(
         if name:
             return name
         _invalid("Enter the profile number from the list.")
+
+
+def screen_apply_scope(selected: str, cwd: str | None = None) -> str | None:
+    """Ask global switch vs bind current repo. Returns 'global', 'bind', or None."""
+    cwd = cwd or os.getcwd()
+    repo_root = find_git_root(cwd)
+
+    _header("how to apply")
+    print(f"  {muted('Profile:')}  {profile_name(selected)}\n")
+    print_menu_line("1", "Global — default SSH key (~/.ssh/id_ed25519)")
+    if repo_root:
+        short = _clip(repo_root.replace(os.path.expanduser("~"), "~"), 48)
+        print_menu_line("2", f"This repo only — {short}")
+    else:
+        print(f"  {muted('2  This repo only — not in a Git repository')}")
+    print_menu_line("0", "Back")
+    print()
+
+    while True:
+        choice = _choice()
+        if choice == "1":
+            return "global"
+        if choice == "2":
+            if repo_root:
+                return "bind"
+            _invalid("Open a Git repository folder first, or pick Global.")
+            continue
+        if choice in ("0", "b", "back", "q"):
+            return None
+        _invalid("Enter 1, 2, or 0.")
 
 
 def screen_edit_profile(
@@ -387,8 +487,10 @@ def screen_main_menu(
     profiles: dict,
     git_global_scope: bool,
     key_name: str,
-) -> tuple[dict, bool, str | None]:
-    """Hub: switch, new, or settings — one action per step."""
+    lock_path: str,
+    bindings_file: str,
+) -> tuple[dict, bool, str | None, str | None]:
+    """Hub: switch, new, or settings. Returns (profiles, scope, name, apply_mode)."""
     while True:
         _header("main menu")
         count = len(profiles)
@@ -403,14 +505,27 @@ def screen_main_menu(
 
         if choice == "1":
             name = screen_pick_profile(
-                path_ssh, profiles, key_name, title="switch profile"
+                path_ssh,
+                profiles,
+                key_name,
+                install_dir=script_dir,
+                lock_path=lock_path,
+                bindings_file=bindings_file,
+                title="switch profile",
             )
-            if name:
-                print_msg_success(f"Activating {profile_name(name)}")
-                return profiles, git_global_scope, name
+            if not name:
+                continue
+            apply_mode = screen_apply_scope(name)
+            if apply_mode is None:
+                continue
+            if apply_mode == "global":
+                print_msg_success(f"Activating {profile_name(name)} globally")
+            else:
+                print_msg_success(f"Binding {profile_name(name)} to this repo")
+            return profiles, git_global_scope, name, apply_mode
 
         elif choice == "2":
-            return wizard_new_profile(
+            p, s, name = wizard_new_profile(
                 path_ssh,
                 settings_path,
                 script_dir,
@@ -418,6 +533,10 @@ def screen_main_menu(
                 git_global_scope,
                 key_name,
             )
+            profiles, git_global_scope = p, s
+            if name:
+                return profiles, git_global_scope, name, "global"
+            continue
 
         elif choice == "3":
             profiles, git_global_scope = screen_settings(
@@ -430,7 +549,7 @@ def screen_main_menu(
             )
 
         elif choice in ("0", "q", "quit"):
-            return profiles, git_global_scope, None
+            return profiles, git_global_scope, None, None
 
         else:
             _invalid("Enter 1, 2, 3, or 0.")
@@ -465,13 +584,21 @@ def pick_profile_interactive(
     profiles: dict,
     git_global_scope: bool,
     key_name: str,
-) -> tuple[dict, bool, str | None]:
-    """Entry from `gitkey` with no args."""
+) -> tuple[dict, bool, str | None, str | None]:
+    """Entry from `gitkey` with no args. Returns (profiles, scope, name, apply_mode)."""
     if not profiles:
         print_msg_warn("No profiles yet — let's create the first one.")
-        return wizard_new_profile(
+        p, s, name = wizard_new_profile(
             path_ssh, settings_path, script_dir, profiles, git_global_scope, key_name
-        )
+        )[:3]
+        return p, s, name, "global" if name else None
     return screen_main_menu(
-        path_ssh, settings_path, script_dir, profiles, git_global_scope, key_name
+        path_ssh,
+        settings_path,
+        script_dir,
+        profiles,
+        git_global_scope,
+        key_name,
+        lock_path=os.path.join(script_dir, "active_profile.lock"),
+        bindings_file=os.path.join(script_dir, "repo_bindings.json"),
     )

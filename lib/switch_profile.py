@@ -114,7 +114,7 @@ import sys
 import subprocess
 from pathlib import Path
 from shutil import copyfile
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+from argparse import ArgumentParser, RawDescriptionHelpFormatter
 
 # Paths: lib/ = code, install root = settings + bindings, ~/.ssh/ = keys + lock
 LIB_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -132,7 +132,8 @@ else:
 
 SETTINGS_FILE = os.path.join(INSTALL_DIR, "settings.py")
 SETTINGS_EXAMPLE = os.path.join(LIB_DIR, "settings-example.py")
-LOCK_FILENAME = os.path.join(PATH_SSH, "active_profile.lock")
+LOCK_FILENAME = os.path.join(INSTALL_DIR, "active_profile.lock")
+LOCK_FILENAME_LEGACY = os.path.join(PATH_SSH, "active_profile.lock")
 BINDINGS_FILE = os.path.join(INSTALL_DIR, "repo_bindings.json")
 ALLOWED_SIGNERS_FILE = os.path.join(PATH_SSH, "allowed_signers")
 KEY_NAME = "id_ed25519"
@@ -160,21 +161,41 @@ except ImportError:
 except Exception as e:
     sys.exit(f"\nERROR: Failed to load settings.py: {e}\n")
 
-from profile_wizard import menu_config, pick_profile_interactive, wizard_new_profile
+from profile_wizard import (
+    menu_config,
+    pick_profile_interactive,
+    screen_apply_scope,
+    wizard_new_profile,
+)
 
 
 def read_lock():
     """Read last active profile from lock file, if any."""
-    if os.path.exists(LOCK_FILENAME):
-        with open(LOCK_FILENAME, "r") as f:
-            return f.read().strip() or None
+    for path in (LOCK_FILENAME, LOCK_FILENAME_LEGACY):
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r") as f:
+                value = f.read().strip()
+                if value:
+                    return value
+        except OSError:
+            continue
     return None
 
 
 def write_lock(profile_name: str):
-    """Persist active profile name to lock file."""
-    with open(LOCK_FILENAME, "w") as f:
-        f.write(profile_name)
+    """Persist active profile name to lock file (under install dir, user-writable)."""
+    try:
+        with open(LOCK_FILENAME, "w") as f:
+            f.write(profile_name)
+    except PermissionError:
+        sys.exit(
+            f"\nERROR: Cannot write {LOCK_FILENAME}\n"
+            f"Fix permissions: chmod u+w {INSTALL_DIR}\n"
+        )
+    except OSError as e:
+        sys.exit(f"\nERROR: Cannot write lock file: {e}\n")
 
 
 def get_next_profile_name(current: str | None) -> str:
@@ -193,10 +214,13 @@ def reload_profiles_config():
     PROFILES, GIT_GLOBAL_SCOPE = reload_settings_module(INSTALL_DIR)
 
 
-def interactive_pick_profile() -> str | None:
-    """Menu: switch profile, create new client, or open settings."""
+def interactive_pick_profile() -> tuple[str | None, str | None]:
+    """Menu: switch profile, create new client, or open settings.
+
+    Returns (profile_name, apply_mode) where apply_mode is 'global', 'bind', or None.
+    """
     global PROFILES, GIT_GLOBAL_SCOPE
-    profiles, scope, name = pick_profile_interactive(
+    profiles, scope, name, apply_mode = pick_profile_interactive(
         PATH_SSH,
         Path(SETTINGS_FILE),
         INSTALL_DIR,
@@ -206,9 +230,7 @@ def interactive_pick_profile() -> str | None:
     )
     PROFILES = profiles
     GIT_GLOBAL_SCOPE = scope
-    if name:
-        print(f"\n→ Selected profile: {name}")
-    return name
+    return name, apply_mode
 
 
 def copy_keys(profile_name: str):
@@ -971,73 +993,102 @@ def fix_last_commit(profile_name: str):
     print()
 
 
+HELP_EPILOG = """
+examples:
+  gitkey                         Interactive menu
+  gitkey -p personal             Switch global key + Git identity
+  gitkey -p auto                 Rotate to next profile (alphabetical)
+  gitkey --bind -p clientA       Bind profile to current repo only
+  gitkey --bind -p clientA ~/proj Bind profile to a specific repo path
+  gitkey --bind -p clientA -r ~/work/client   Bind all repos under a folder
+  gitkey --binds                 List repositories bound to profiles
+  gitkey --unbind                Remove binding from current repo
+  gitkey --new                   Create profile + SSH key (wizard)
+  gitkey --config                Settings: signing, email, keys
+  gitkey --reset -p personal     Rewrite last commit author
+  gitkey -f -p personal          Amend last commit with profile
+
+config:  ~/.ssh/gitkey/settings.py
+install: curl -fsSL https://raw.githubusercontent.com/geovanent/gitkey/main/install.sh | bash
+"""
+
+
 def main():
-    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument(
+    parser = ArgumentParser(
+        prog="gitkey",
+        description="Switch SSH keys and Git identities for multiple clients.",
+        formatter_class=RawDescriptionHelpFormatter,
+        epilog=HELP_EPILOG,
+    )
+
+    bind_group = parser.add_argument_group("per-repository (multiple keys at once)")
+    bind_group.add_argument(
         "directory",
         nargs="?",
         default=".",
-        help="Target directory for --bind / --unbind (default: current directory).",
+        metavar="PATH",
+        help="Repo or folder for --bind / --unbind (default: .)",
     )
-    parser.add_argument(
-        "-p",
-        "--profile",
-        help=(
-            "Profile name (defined in PROFILES) or 'auto' to "
-            "rotate between profiles. If omitted, an interactive "
-            "selection menu will be shown."
-        ),
-    )
-    parser.add_argument(
+    bind_group.add_argument(
         "--bind",
         action="store_true",
-        help=(
-            "Bind a profile to a Git repository. Sets local core.sshCommand "
-            "and Git identity without changing the global SSH key."
-        ),
+        help="Bind profile to PATH (local core.sshCommand; global key unchanged)",
     )
-    parser.add_argument(
+    bind_group.add_argument(
         "--unbind",
         action="store_true",
-        help="Remove a profile binding from a Git repository.",
+        help="Remove profile binding from PATH",
     )
-    parser.add_argument(
+    bind_group.add_argument(
         "--binds",
         action="store_true",
-        help="List all repositories bound to profiles.",
+        help="List all repository bindings",
     )
-    parser.add_argument(
+    bind_group.add_argument(
         "-r",
         "--recursive",
         action="store_true",
-        help="With --bind, bind all Git repositories under the given directory.",
+        help="With --bind, bind every Git repo under PATH",
     )
-    parser.add_argument(
+
+    profile_group = parser.add_argument_group("switch profile")
+    profile_group.add_argument(
+        "-p",
+        "--profile",
+        metavar="NAME",
+        help="Profile name, or 'auto' to rotate; omit for interactive menu",
+    )
+    profile_group.add_argument(
         "--no-git",
         action="store_true",
-        help="Do not modify Git user.name/user.email.",
+        help="Change SSH key only; do not set user.name / user.email",
     )
-    parser.add_argument(
+
+    setup_group = parser.add_argument_group("setup")
+    setup_group.add_argument(
+        "--new",
+        action="store_true",
+        help="Create a new profile and SSH key (wizard)",
+    )
+    setup_group.add_argument(
+        "--config",
+        action="store_true",
+        help="Edit profiles: signed commits, Git identity, SSH keys",
+    )
+
+    commit_group = parser.add_argument_group("last commit")
+    commit_group.add_argument(
         "--reset",
         action="store_true",
-        help="Reset the author of the last commit to match the current profile.",
+        help="Set last commit author to the profile",
     )
-    parser.add_argument(
+    commit_group.add_argument(
         "-f",
         "--fix",
         action="store_true",
-        help="Fix the last commit by reopening it for editing and recommitting with the current profile.",
+        help="Amend last commit (message + author + signing)",
     )
-    parser.add_argument(
-        "--new",
-        action="store_true",
-        help="Create a new client profile and SSH key (interactive wizard).",
-    )
-    parser.add_argument(
-        "--config",
-        action="store_true",
-        help="Open visual settings: toggle signed commits, edit identity, manage keys.",
-    )
+
     args = parser.parse_args()
 
     global PROFILES, GIT_GLOBAL_SCOPE
@@ -1152,9 +1203,13 @@ def main():
         return
 
     # Decide which profile to use
+    apply_mode = "global"
     if args.profile is None:
-        profile_name = interactive_pick_profile()
+        profile_name, apply_mode = interactive_pick_profile()
         if profile_name is None:
+            return
+        if apply_mode == "bind":
+            bind_repository(profile_name, args.directory)
             return
     elif args.profile == "auto":
         # Auto-rotate mode
@@ -1169,6 +1224,19 @@ def main():
                 f"Profiles: {', '.join(sorted(PROFILES.keys()))}\n"
             )
         profile_name = args.profile
+        if (
+            not args.bind
+            and not args.no_git
+            and sys.stdin.isatty()
+            and sys.stdout.isatty()
+        ):
+            chosen = screen_apply_scope(profile_name, args.directory)
+            if chosen is None:
+                return
+            if chosen == "bind":
+                bind_repository(profile_name, args.directory)
+                return
+            apply_mode = "global"
 
     # Save selection to lock file (used by auto mode)
     write_lock(profile_name)

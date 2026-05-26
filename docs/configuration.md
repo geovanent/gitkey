@@ -61,7 +61,7 @@ PROFILES = {
 │   ├── id_ed25519
 │   └── id_ed25519.pub
 ├── id_ed25519              # active key (global mode)
-├── active_profile.lock     # last profile used
+├── gitkey/active_profile.lock   # last global profile (in install dir)
 └── allowed_signers         # commit signing (auto-generated)
 ```
 
