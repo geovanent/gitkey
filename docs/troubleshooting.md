@@ -64,4 +64,10 @@ gitkey --bind -p <profile>    # run again inside the repo
 
 ## Windows notes
 
-Native Windows uses `gitkey.cmd` calling `python`. For full SSH tooling, prefer **WSL** or **Git Bash** and run `install.sh`.
+Native Windows ships a `gitkey.cmd` shim that calls `python`.
+
+Quick notes:
+
+- To install natively with PowerShell, run the included installer `install.ps1` (see [Windows Installation](docs/install-windows.md)).
+- If PowerShell blocks scripts, run the installer with `-ExecutionPolicy Bypass` or set `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`.
+- For best compatibility with SSH agents and signing, prefer **WSL** or **Git Bash** and use the Unix installer (`install.sh`).

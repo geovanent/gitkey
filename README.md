@@ -52,6 +52,8 @@ Your config: `~/.ssh/gitkey/settings.py`
 
 ## Install
 
+### macOS / Linux
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/geovanent/gitkey/main/install.sh | bash
 ```
@@ -65,6 +67,26 @@ cd ~/.ssh/gitkey && ./install
 ```
 
 </details>
+
+### Windows (PowerShell)
+
+Run the bundled PowerShell installer. Recommended options:
+
+One-liner (PowerShell):
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/geovanent/gitkey/main/install.ps1 | iex
+```
+
+Manual clone and run:
+
+```powershell
+git clone https://github.com/geovanent/gitkey.git $env:USERPROFILE\\.ssh\\gitkey
+Set-Location $env:USERPROFILE\\.ssh\\gitkey
+powershell -ExecutionPolicy Bypass -File .\\install.ps1
+```
+
+See the Windows guide for details and troubleshooting: [Windows Installation](docs/install-windows.md)
 
 ---
 

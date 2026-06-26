@@ -11,6 +11,13 @@ function Write-Ok($msg)    { Write-Host "✓ $msg" -ForegroundColor Green }
 function Write-Warn($msg)  { Write-Host "! $msg" -ForegroundColor Yellow }
 function Write-Die($msg)   { Write-Host "✗ $msg" -ForegroundColor Red; exit 1 }
 
+function Test-Python {
+    if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+        Write-Die "Python 3.8+ is required. Install from python.org"
+    }
+    Write-Ok "Python is available"
+}
+
 function Test-App($dir) {
     return Test-Path (Join-Path $dir "lib\switch_profile.py")
 }
