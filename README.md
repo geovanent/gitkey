@@ -76,7 +76,8 @@ cd ~/.ssh/gitkey && ./install
 
 **Windows**
 ```powershell
-powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\.ssh\gitkey\install.ps1
+cd $env:USERPROFILE\.ssh\gitkey
+.\install.cmd
 ```
 
 </details>

@@ -75,11 +75,6 @@ python "$pyScript" %*
 "@
     Set-Content -Path $cmdPath -Value $cmdBody -Encoding ASCII
     Write-Ok "Created $cmdPath"
-
-    $ps1Path = Join-Path $BinDir "gitkey.ps1"
-    $ps1Body = "& `"$cmdPath`" @args"
-    Set-Content -Path $ps1Path -Value $ps1Body -Encoding ASCII
-    Write-Ok "Created $ps1Path"
 }
 
 function Ensure-PathEnv {

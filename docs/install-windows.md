@@ -26,7 +26,8 @@ Integrated terminals often keep the old PATH until the app restarts. Until then:
 If you already cloned the repo:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\.ssh\gitkey\install.ps1
+cd $env:USERPROFILE\.ssh\gitkey
+.\install.cmd
 ```
 
 Optional — allow local PowerShell scripts (profiles, `.ps1`) for your user:
