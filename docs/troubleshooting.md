@@ -71,3 +71,13 @@ Quick notes:
 - To install natively with PowerShell, run the included installer `install.ps1` (see [Windows Installation](docs/install-windows.md)).
 - If PowerShell blocks scripts, run the installer with `-ExecutionPolicy Bypass` or set `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`.
 - For best compatibility with SSH agents and signing, prefer **WSL** or **Git Bash** and use the Unix installer (`install.sh`).
+
+## `iex : Cannot bind argument to parameter 'Path' because it is null`
+
+This happened on older `install.ps1` when running the one-liner (`iwr ... | iex`): piped scripts have no `$MyInvocation.MyCommand.Path`.
+
+Update to the latest installer, or run from a local clone:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\.ssh\gitkey\install.ps1
+```

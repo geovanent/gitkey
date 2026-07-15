@@ -4,7 +4,13 @@ $ErrorActionPreference = "Stop"
 $RepoUrl    = "git@github.com:geovanent/gitkey.git"
 $InstallDir = Join-Path $env:USERPROFILE ".ssh\gitkey"
 $BinDir     = Join-Path $env:USERPROFILE ".local\bin"
-$RepoRoot   = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Path is null when the script is piped into iex (iwr ... | iex)
+$ScriptPath = $MyInvocation.MyCommand.Path
+$RepoRoot   = if (-not [string]::IsNullOrWhiteSpace($ScriptPath)) {
+    Split-Path -Parent $ScriptPath
+} else {
+    $null
+}
 
 function Write-Info($msg)  { Write-Host "→ $msg" -ForegroundColor Cyan }
 function Write-Ok($msg)    { Write-Host "✓ $msg" -ForegroundColor Green }
@@ -29,7 +35,7 @@ function Ensure-Repo {
         try { git pull --ff-only 2>$null } catch { git pull 2>$null }
         Pop-Location
     }
-    elseif (Test-App $RepoRoot) {
+    elseif ($RepoRoot -and (Test-App $RepoRoot)) {
         Write-Info "Installing from $RepoRoot..."
         New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
         Copy-Item -Path "$RepoRoot\*" -Destination $InstallDir -Recurse -Force `
