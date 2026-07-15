@@ -75,6 +75,11 @@ python "$pyScript" %*
 "@
     Set-Content -Path $cmdPath -Value $cmdBody -Encoding ASCII
     Write-Ok "Created $cmdPath"
+
+    $ps1Path = Join-Path $BinDir "gitkey.ps1"
+    $ps1Body = "& `"$cmdPath`" @args"
+    Set-Content -Path $ps1Path -Value $ps1Body -Encoding ASCII
+    Write-Ok "Created $ps1Path"
 }
 
 function Ensure-PathEnv {
@@ -99,6 +104,10 @@ Write-Host ""
 Write-Ok "Installation complete"
 Write-Host ""
 Write-Host "  Edit $InstallDir\settings.py"
-Write-Host "  Run: gitkey"
+Write-Host "  Close and reopen the terminal (or restart Cursor), then run: gitkey"
 Write-Host ""
+Write-Host "  Until then you can run:"
+Write-Host "  & `"$BinDir\gitkey.cmd`""
+Write-Host ""
+Write-Warn "Optional: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned"
 Write-Warn "For full SSH support, prefer WSL or Git Bash with install.sh"

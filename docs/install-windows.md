@@ -9,31 +9,27 @@ This guide covers installing gitkey on native Windows using PowerShell, and alte
 
 ## Install (PowerShell)
 
-Recommended: run the included PowerShell installer. Open PowerShell (preferably as your user, not Administrator) and run one of the commands below.
-
-One-liner (download, then run as a file — more reliable than `| iex`):
+Copy-paste this one-liner:
 
 ```powershell
-$script = Join-Path $env:TEMP 'gitkey-install.ps1'
-Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/geovanent/gitkey/main/install.ps1 -OutFile $script
-powershell -ExecutionPolicy Bypass -File $script
+irm https://raw.githubusercontent.com/geovanent/gitkey/main/install.ps1 -OutFile $env:TEMP\gitkey-install.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\gitkey-install.ps1
 ```
 
-If PowerShell blocks remote scripts, run the installer file explicitly after cloning:
+Then **fully restart Cursor / open a new PowerShell window outside Cursor** and run `gitkey`.
+
+Integrated terminals often keep the old PATH until the app restarts. Until then:
 
 ```powershell
-git clone https://github.com/geovanent/gitkey.git $env:USERPROFILE\.ssh\gitkey
-Set-Location $env:USERPROFILE\.ssh\gitkey
-powershell -ExecutionPolicy Bypass -File .\install.ps1
+& "$env:USERPROFILE\.local\bin\gitkey.cmd"
 ```
 
-If you prefer not to bypass execution policy globally, adjust only the process:
+If you already cloned the repo:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1
+powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\.ssh\gitkey\install.ps1
 ```
 
-To allow running local scripts in your user scope (optional):
+Optional — allow local PowerShell scripts (profiles, `.ps1`) for your user:
 
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force

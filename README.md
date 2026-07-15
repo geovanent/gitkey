@@ -58,37 +58,30 @@ Your config: `~/.ssh/gitkey/settings.py`
 curl -fsSL https://raw.githubusercontent.com/geovanent/gitkey/main/install.sh | bash
 ```
 
-<details>
-<summary>Clone install</summary>
+### Windows (PowerShell)
 
+```powershell
+irm https://raw.githubusercontent.com/geovanent/gitkey/main/install.ps1 -OutFile $env:TEMP\gitkey-install.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\gitkey-install.ps1
+```
+
+After install, **open a new terminal** and run `gitkey`.
+
+<details>
+<summary>Already cloned the repo?</summary>
+
+**macOS / Linux**
 ```sh
-git clone git@github.com:geovanent/gitkey.git ~/.ssh/gitkey
 cd ~/.ssh/gitkey && ./install
+```
+
+**Windows**
+```powershell
+powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\.ssh\gitkey\install.ps1
 ```
 
 </details>
 
-### Windows (PowerShell)
-
-Run the bundled PowerShell installer. Recommended options:
-
-One-liner (PowerShell):
-
-```powershell
-$script = Join-Path $env:TEMP 'gitkey-install.ps1'
-Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/geovanent/gitkey/main/install.ps1 -OutFile $script
-powershell -ExecutionPolicy Bypass -File $script
-```
-
-Manual clone and run:
-
-```powershell
-git clone https://github.com/geovanent/gitkey.git $env:USERPROFILE\\.ssh\\gitkey
-Set-Location $env:USERPROFILE\\.ssh\\gitkey
-powershell -ExecutionPolicy Bypass -File .\\install.ps1
-```
-
-See the Windows guide for details and troubleshooting: [Windows Installation](docs/install-windows.md)
+See also: [Windows Installation](docs/install-windows.md)
 
 ---
 
