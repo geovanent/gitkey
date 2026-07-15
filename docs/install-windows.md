@@ -11,10 +11,12 @@ This guide covers installing gitkey on native Windows using PowerShell, and alte
 
 Recommended: run the included PowerShell installer. Open PowerShell (preferably as your user, not Administrator) and run one of the commands below.
 
-One-liner (downloads and executes the installer):
+One-liner (download, then run as a file — more reliable than `| iex`):
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/geovanent/gitkey/main/install.ps1 | iex
+$script = Join-Path $env:TEMP 'gitkey-install.ps1'
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/geovanent/gitkey/main/install.ps1 -OutFile $script
+powershell -ExecutionPolicy Bypass -File $script
 ```
 
 If PowerShell blocks remote scripts, run the installer file explicitly after cloning:

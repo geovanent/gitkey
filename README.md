@@ -75,7 +75,9 @@ Run the bundled PowerShell installer. Recommended options:
 One-liner (PowerShell):
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/geovanent/gitkey/main/install.ps1 | iex
+$script = Join-Path $env:TEMP 'gitkey-install.ps1'
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/geovanent/gitkey/main/install.ps1 -OutFile $script
+powershell -ExecutionPolicy Bypass -File $script
 ```
 
 Manual clone and run:

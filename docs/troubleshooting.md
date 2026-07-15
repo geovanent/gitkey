@@ -74,10 +74,12 @@ Quick notes:
 
 ## `iex : Cannot bind argument to parameter 'Path' because it is null`
 
-This happened on older `install.ps1` when running the one-liner (`iwr ... | iex`): piped scripts have no `$MyInvocation.MyCommand.Path`.
+Piped scripts (`iwr ... | iex`) have no `$MyInvocation.MyCommand.Path`. Older installers called `Split-Path` on that null value and failed. GitHub's raw CDN can also keep serving a cached old `main` file for a while.
 
-Update to the latest installer, or run from a local clone:
+Skip the one-liner and run from a local clone:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\.ssh\gitkey\install.ps1
 ```
+
+Or download to a temp file first (see [Windows Installation](install-windows.md)).

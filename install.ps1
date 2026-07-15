@@ -1,4 +1,5 @@
-# gitkey installer — Windows (PowerShell)
+# gitkey installer - Windows (PowerShell)
+# Keep this file ASCII-only so Windows PowerShell 5.1 can parse it without a UTF-8 BOM.
 $ErrorActionPreference = "Stop"
 
 $RepoUrl    = "git@github.com:geovanent/gitkey.git"
@@ -12,10 +13,10 @@ $RepoRoot   = if (-not [string]::IsNullOrWhiteSpace($ScriptPath)) {
     $null
 }
 
-function Write-Info($msg)  { Write-Host "→ $msg" -ForegroundColor Cyan }
-function Write-Ok($msg)    { Write-Host "✓ $msg" -ForegroundColor Green }
+function Write-Info($msg)  { Write-Host "-> $msg" -ForegroundColor Cyan }
+function Write-Ok($msg)    { Write-Host "OK $msg" -ForegroundColor Green }
 function Write-Warn($msg)  { Write-Host "! $msg" -ForegroundColor Yellow }
-function Write-Die($msg)   { Write-Host "✗ $msg" -ForegroundColor Red; exit 1 }
+function Write-Die($msg)   { Write-Host "X $msg" -ForegroundColor Red; exit 1 }
 
 function Test-Python {
     if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
@@ -67,10 +68,12 @@ function Link-Cli {
     New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
     $cmdPath = Join-Path $BinDir "gitkey.cmd"
     $pyScript = Join-Path $InstallDir "lib\switch_profile.py"
-    @"
+    # Expand $pyScript here; leave %* for cmd.exe argument forwarding.
+    $cmdBody = @"
 @echo off
-python "%pyScript%" %*
-"@ | Set-Content -Path $cmdPath -Encoding ASCII
+python "$pyScript" %*
+"@
+    Set-Content -Path $cmdPath -Value $cmdBody -Encoding ASCII
     Write-Ok "Created $cmdPath"
 }
 
