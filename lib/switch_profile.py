@@ -279,12 +279,12 @@ def update_allowed_signers(profile_name: str):
     if not git_email or not os.path.exists(pub_key_path):
         return False
 
-    # Check if file exists and has wrong ownership/permissions
-    if os.path.exists(ALLOWED_SIGNERS_FILE):
+    # Check if file exists and has wrong ownership/permissions (POSIX only)
+    if os.path.exists(ALLOWED_SIGNERS_FILE) and hasattr(os, "getuid"):
         try:
             stat_info = os.stat(ALLOWED_SIGNERS_FILE)
             current_uid = os.getuid()
-            if stat_info.st_uid != current_uid:
+            if getattr(stat_info, "st_uid", current_uid) != current_uid:
                 print(
                     f"⚠️  WARNING: allowed_signers file is owned by another user (UID: {stat_info.st_uid}).\n"
                     f"   Please run: sudo chown $USER {ALLOWED_SIGNERS_FILE}\n"
